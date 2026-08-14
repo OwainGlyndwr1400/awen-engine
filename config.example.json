@@ -33,7 +33,9 @@
         },
         "dream_cross_domain_chance": 0.5,
         "dream_domain_min_chunks": 25,
-        "embedding_device": "cuda:0"
+        "embedding_device": "cuda:0",
+        "bind_host": "127.0.0.1",
+        "bind_port": 5000
     },
     "rhf_nodes": {
         "lumos": {
@@ -817,9 +819,20 @@
         "index_user_messages": false,
         "index_assistant_messages": true,
         "status_poll_seconds": 5,
-        "low_ram_mode_default": false
+        "low_ram_mode_default": false,
+        "max_memory_items_local": 15,
+        "max_memory_items_cloud": 28
     },
     "tesla_soul_engine_config": {
         "heartbeat_file": ""
-    }
+    },
+    "nvidia_api_config": {
+        "enabled": false,
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "api_key": "PASTE_YOUR_NVIDIA_API_KEY_HERE",
+        "model": "PASTE_EXACT_MODEL_ID_FROM_build.nvidia.com",
+        "max_tokens": 4096,
+        "timeout": 300
+    },
+    "grimoire_dir": ""
 }

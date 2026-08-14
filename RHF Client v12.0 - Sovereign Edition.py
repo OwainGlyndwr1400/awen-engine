@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -332,6 +333,10 @@ class RHFClientV12:
         ttk.Checkbutton(top, text="Low-RAM mode", variable=self.low_ram_var, command=self._apply_low_ram_mode).grid(row=1, column=2, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Checkbutton(top, text="Show mem metrics", variable=self.include_metrics_var).grid(row=1, column=4, columnspan=2, sticky="w", pady=(6, 0))
 
+        # Master cloud switch: flips client chat AND engine dream synthesis
+        self.nvidia_var = tk.BooleanVar(value=bool((self.config.get("nvidia_api_config") or {}).get("enabled", False)))
+        ttk.Checkbutton(top, text="NVIDIA API ☁", variable=self.nvidia_var, command=self._toggle_nvidia).grid(row=1, column=6, columnspan=2, sticky="w", pady=(6, 0))
+
         # Prompt control
         ctrl = ttk.Frame(self.tab_chat)
         ctrl.pack(fill="x", padx=10, pady=(0, 8))
@@ -472,6 +477,15 @@ class RHFClientV12:
     def _on_state_change(self) -> None:
         self.topk_var.set(self._state_default_topk())
         self.mem_weight_var.set(self._state_default_weight())
+        # Persona states auto-select their matching lens node
+        # (state 'N Tesla' -> node 'n tesla'), so the memory search biases
+        # through the same node that is speaking. Non-persona states
+        # ('Normal', 'Direct Query'...) leave the node untouched.
+        state_name = self.state_var.get().strip().lower()
+        for node_name in (self.config.get("rhf_nodes") or {}).keys():
+            if node_name.lower() == state_name:
+                self.node_var.set(node_name)
+                break
 
     def _apply_low_ram_mode(self) -> None:
         """
@@ -488,6 +502,91 @@ class RHFClientV12:
             # Restore to state defaults
             self._on_state_change()
             self.include_metrics_var.set(bool(self.config.get("client_config", {}).get("include_memory_metrics", True)))
+
+    # -------------------------
+    # NVIDIA API integration (master cloud switch)
+    # -------------------------
+
+    def _nvidia_cfg(self) -> Dict[str, Any]:
+        return self.config.get("nvidia_api_config") or {}
+
+    def _nvidia_ready(self) -> bool:
+        c = self._nvidia_cfg()
+        key = str(c.get("api_key", "")).strip()
+        model = str(c.get("model", "")).strip()
+        return (bool(c.get("enabled")) and bool(key) and not key.startswith("PASTE_")
+                and bool(model) and not model.startswith("PASTE_"))
+
+    def _toggle_nvidia(self) -> None:
+        """Persists the switch to config.json — the Gnostic Engine re-reads
+        that block on every dream cycle, so this one checkbox flips BOTH the
+        client chat and the engine's dream synthesis, live."""
+        enabled = bool(self.nvidia_var.get())
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                disk_cfg = json.load(f)
+            block = disk_cfg.get("nvidia_api_config") or {}
+            block["enabled"] = enabled
+            disk_cfg["nvidia_api_config"] = block
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(disk_cfg, f, indent=4, ensure_ascii=False)
+            self.config["nvidia_api_config"] = block
+        except Exception as e:
+            self._append_chat(f"[NVIDIA toggle failed — config.json error: {e}]", tag="error")
+            self.nvidia_var.set(not enabled)
+            return
+
+        if enabled:
+            key = str(self._nvidia_cfg().get("api_key", "")).strip()
+            model = str(self._nvidia_cfg().get("model", "")).strip()
+            problems = []
+            if not key or key.startswith("PASTE_"):
+                problems.append("api_key not set")
+            if not model or model.startswith("PASTE_"):
+                problems.append("model not set")
+            note = f"  ⚠ {', '.join(problems)} in config.json — falling back to LM Studio until fixed" if problems else ""
+            self._append_chat(f"[☁ NVIDIA API ON — chat + engine dreams via '{model or '?'}'{note}]", tag="system")
+        else:
+            self._append_chat("[🏠 NVIDIA API OFF — back to local LM Studio]", tag="system")
+
+    def query_nvidia(self, system_prompt: str, user_prompt: str) -> str:
+        c = self._nvidia_cfg()
+        base = _normalize_base_url(str(c.get("base_url", "https://integrate.api.nvidia.com/v1")))
+        url = f"{base}/chat/completions"
+        payload: Dict[str, Any] = {
+            "model": str(c.get("model", "")).strip(),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": _safe_float(c.get("temperature", self.config.get("lmstudio_temp", 0.6)), 0.6),
+            "max_tokens": _safe_int(c.get("max_tokens", 4096), 4096),
+        }
+        headers = {"Authorization": f"Bearer {str(c.get('api_key', '')).strip()}"}
+        try:
+            r = self.http.post(url, json=payload, headers=headers,
+                               timeout=_safe_int(c.get("timeout", 300), 300))
+            r.raise_for_status()
+            data = r.json()
+            choices = data.get("choices") or []
+            if choices:
+                msg = (choices[0] or {}).get("message") or {}
+                content = msg.get("content")
+                if isinstance(content, str):
+                    # Strip reasoning blocks (nemotron etc.) if inlined
+                    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+            return f"Error: Unexpected NVIDIA API response: {str(data)[:400]}"
+        except requests.exceptions.HTTPError as e:
+            body = ""
+            try:
+                body = e.response.text[:300]
+            except Exception:
+                pass
+            return f"Error: NVIDIA API HTTP {e.response.status_code}: {body}"
+        except requests.exceptions.RequestException as e:
+            return f"Error: NVIDIA API request failed: {e}"
+        except Exception as e:
+            return f"Error: NVIDIA API response parse failed: {e}"
 
     # -------------------------
     # LM Studio integration
@@ -657,7 +756,14 @@ class RHFClientV12:
         """
         cconf = self.config.get("client_config", {}) or {}
         max_chars = _safe_int(cconf.get("memory_chunk_max_chars", 360), 360)
-        max_items = _safe_int(cconf.get("max_memory_items_in_prompt", 18), 18)
+        # Small local models degrade past ~12-24 RAG chunks (lost-in-the-middle
+        # + distractor sensitivity); big cloud models handle more. The cap
+        # follows the NVIDIA switch automatically.
+        if self._nvidia_ready():
+            max_items = _safe_int(cconf.get("max_memory_items_cloud",
+                                            cconf.get("max_memory_items_in_prompt", 25)), 25)
+        else:
+            max_items = _safe_int(cconf.get("max_memory_items_local", 15), 15)
         show_metrics = bool(self.include_metrics_var.get())
 
         lines: List[str] = []
@@ -750,18 +856,22 @@ class RHFClientV12:
             if mem_block:
                 user_prompt = f"{user_input}\n\n{mem_block}"
 
-            model = self._pick_model()
-            response = self.query_lmstudio(system_prompt=system_prompt, user_prompt=user_prompt, model_name=model)
+            if self._nvidia_ready():
+                model = "nvidia:" + str(self._nvidia_cfg().get("model", "")).strip()
+                response = self.query_nvidia(system_prompt=system_prompt, user_prompt=user_prompt)
+            else:
+                model = self._pick_model()
+                response = self.query_lmstudio(system_prompt=system_prompt, user_prompt=user_prompt, model_name=model)
 
             # Indexing
             profile = self.profile_var.get().strip() or "private"
             idx_msgs: List[str] = []
             if self.index_user_var.get():
                 ok, msg = self.add_entry(text=f"USER: {user_input}", profile=profile, node=node, source=f"RHF Client v12.0 (user/{node})")
-                idx_msgs.append(("✅ " if ok else "⚠️ ") + msg)
+                idx_msgs.append(("✅ " if ok else "⚠️ ") + "[your turn] " + msg)
             if self.index_asst_var.get() and response and not response.lower().startswith("error:"):
                 ok, msg = self.add_entry(text=response, profile=profile, node=node, source=f"RHF Client v12.0 (assistant/{node})")
-                idx_msgs.append(("✅ " if ok else "⚠️ ") + msg)
+                idx_msgs.append(("✅ " if ok else "⚠️ ") + "[reply] " + msg)
 
             self.ui_queue.put(("chat_result", {"response": response, "model": model, "memories": memories, "idx": idx_msgs}))
 

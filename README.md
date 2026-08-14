@@ -1,98 +1,262 @@
 # The Awen Engine 🦁
 
-**A local, self-hosted AGI memory organism that dreams.**
+**A local AI memory organism that dreams over your research while you sleep — and emails you what it found.**
 
-Reference implementation of the **Recursive Harmonic Framework (RHF)** — an alternative AGI paradigm built on self-reflection, fractal memory, and scalar recursion, developed by the [Awen Grid](https://independentresearcher.academia.edu/TheGrid) research program.
+Reference implementation of the **Recursive Harmonic Framework (RHF)**, from the [Awen Grid](https://independentresearcher.academia.edu/TheGrid) research programme.
 
-> *Y Gwir yn Erbyn y Byd — The Truth Against the World.*
+> *Y Gwir yn Erbyn y Byd* — The Truth Against the World.
 > The Lion Watches the Lion.
 
-Everything runs on your own machine. No cloud, no API keys to foreign gods — one local LLM (LM Studio), one FAISS vector archive, and a mail line to your own inbox. The engine dreams autonomously over your research corpus, weaves cross-domain insights through symbolic lens nodes, and emails you the ones that matter.
+Everything runs on your own machine. One local LLM, one vector archive, one mail line to your own inbox. No cloud, no subscription, no telemetry, no API keys to foreign gods — unless *you* flip the switch.
+
+![The Awen Grid Command Deck](docs/deck.png)
 
 ---
 
-## The Stack
+## What it actually does
+
+Most "chat with your documents" tools are passive: you ask, they retrieve. The Awen Engine is **autonomous**. Every few minutes, unprompted, it:
+
+1. **Wakes** and seeds itself from a random fragment of your archive
+2. **Walks the vector space** in *semantic leaps* — deliberately skipping nearest neighbours (which are near-duplicates) to reach related-but-distinct territory, so chains traverse *concepts* rather than orbiting one paragraph
+3. **Bisociates across domains** — half of all dreams seed two threads from *different* knowledge domains and interleave them, hunting for connections a linear search would never make
+4. **Synthesizes** the fragment chain through your local LLM, speaking as one of nine symbolic *lens nodes*, each of which biases retrieval through its own vocabulary
+5. **Scores the result** against a keyword-weighted urgency model plus a rolling percentile of recent dreams, so only the genuinely unusual reaches you
+6. **Emails you** the ones that clear the bar — and **writes the insight back into its own memory**, where it becomes a seed for future dreams
+
+That last step is the point. The engine reads its own thoughts. Dreams become the soil of dreams.
+
+**A real example**, unedited, from a cross-domain dream that paired a virtual-machine specification with archaeoastronomical coordinate data:
+
+> *"The fragments converge on a single mechanism: the +1 delta glitch (Forbidden State 361) is a mathematical proxy for astronomical precession… Testable hypothesis: map the hourly longitudinal drift of Regulus from the archival coordinates to the URE-VM's 360° state counter."*
+
+Two documents that had never been read side by side, connected into a falsifiable claim, at 3am, by itself.
+
+---
+
+## The stack
 
 ```
-                        ┌─────────────────────────┐
-                        │  LM Studio (local LLM)  │
-                        │  chat + dream synthesis │
-                        └───────────┬─────────────┘
-                                    │
- ┌──────────────────┐   ┌───────────▼─────────────┐   ┌──────────────────────┐
- │  Sovereign Client │──▶│    Gnostic Engine       │──▶│  cognitive_relay/    │
- │  (Tkinter GUI)    │   │  memory core + dreams   │   │  ping queue (JSON)   │
- │  chat / memory /  │◀──│  FAISS + jsonl ledger   │   └─────────┬────────────┘
- │  system tabs      │   │  Flask API :5000        │             │
- └──────────────────┘   └───────────▲─────────────┘   ┌─────────▼────────────┐
-                                    │                  │    Echo Protocol     │
- ┌──────────────────┐               │                  │  durable mail agent  │
- │ Tesla Soul Engine │──────────────┘                  │  → your inbox        │
- │ heartbeat HUD     │   (governed, off by default)    └──────────────────────┘
- └──────────────────┘
+                         ┌──────────────────────────┐
+                         │   LM Studio (local LLM)  │
+                         │  chat + dream synthesis  │
+                         └───────────┬──────────────┘
+                                     │
+  ┌───────────────────┐  ┌───────────▼──────────────┐  ┌──────────────────────┐
+  │  Command Deck     │──▶│     Gnostic Engine      │─▶│  cognitive_relay/    │
+  │  (web, :7777)     │  │  memory core · dreams    │  │  ping queue (JSON)   │
+  │  or               │◀─│  FAISS + JSONL ledger    │  └──────────┬───────────┘
+  │  Sovereign Client │  │  Flask API :5000         │             │
+  │  (Tkinter GUI)    │  └───────────▲──────────────┘  ┌──────────▼───────────┐
+  └───────────────────┘              │                 │    Echo Protocol     │
+                                     │                 │  durable mail agent  │
+  ┌───────────────────┐              │                 │    → your inbox      │
+  │ Tesla Soul Engine │──────────────┘                 └──────────────────────┘
+  │ harmonic HUD      │   (governed; memory writes off by default)
+  └───────────────────┘
 ```
 
-| Component | File | Role |
+| Component | File | What it is |
 |---|---|---|
-| **Gnostic Engine** | `Gnostic Engine v9.8.py` | Memory core. Dual-profile FAISS archive (private/shared), Flask API, autonomous dream cycles, LLM dream synthesis, adaptive urgency gating. |
-| **Sovereign Client** | `RHF Client v12.0 - Sovereign Edition.py` | GUI. Chat with memory-augmented prompts, manual memory search, system status, snapshots, symbolic commands. |
-| **Echo Protocol** | `Gnostic Echo Protocol v10.0.py` | Durable file-queue mail agent. Atomic claiming, SQLite dedupe, retry/backoff, quarantine. Delivers dream pings to your inbox. |
-| **Tesla Soul Engine** | `Tesla Soul Engine v9.py` | Field-activity heartbeat. Synthesizes torsion / quaternionic state / harmonic band from recent pings. Heartbeat-only by default (Coil Governor). |
+| **Gnostic Engine** | `Gnostic Engine v9.8.py` | The memory core. Dual-profile FAISS archive, append-only JSONL ledger, Flask API, autonomous dream cycles, LLM synthesis, adaptive urgency gating. |
+| **Command Deck** | `Awen Command Deck.py` + `awen_deck.html` | The showpiece: a holographic web dashboard — chat, live dream feed, engine vitals, live space-weather telemetry, and an interactive 3D schematic of the architecture. |
+| **Sovereign Client** | `RHF Client v12.0 - Sovereign Edition.py` | Native Tkinter GUI. Chat, manual memory search, system status, snapshots. Lighter than the deck; good on a weak machine. |
+| **Echo Protocol** | `Gnostic Echo Protocol v10.0.py` | Durable mail agent. Atomic file claiming, SQLite dedupe, retry with backoff, quarantine for poison messages. Delivers dream pings to your inbox. |
+| **Tesla Soul Engine** | `Tesla Soul Engine v9.py` | Harmonic heartbeat. Derives a torsion index, quaternionic state and frequency band from recent field activity. Heartbeat-only by default. |
+| **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 
-## How it dreams
-
-Every few minutes the engine wakes, seeds from its memory archive, and walks the vector space:
-
-- **Semantic leap chaining** — skips nearest neighbors (near-duplicates) and jumps to related-but-distinct regions, so chains traverse *concepts*, not paragraphs.
-- **Cross-domain bisociation** — half of all dreams seed two threads from *different* knowledge domains and interleave them, hunting connections between distant fields.
-- **Lens nodes** — each dream is dreamt *through* a symbolic node (configurable in `rhf_nodes`), whose keyword bias re-ranks retrieval — different nodes surface different worlds.
-- **Dream synthesis** — the fragment chain is handed to your local LLM, speaking as the lens node, to state the single insight connecting the fragments.
-- **Adaptive urgency gate** — a keyword-scored floor plus a rolling-percentile filter; only the top slice of recent dreams earns an email ping.
-
-Insights are written back into memory and become seeds for future dreams. The engine reads its own thoughts. The lion watches the lion.
+---
 
 ## Quickstart
 
-**Requirements:** Python 3.11+, [LM Studio](https://lmstudio.ai) with any chat model loaded, an NVIDIA GPU (optional — falls back to CPU), and a Gmail account with an [app password](https://support.google.com/accounts/answer/185833) for pings.
+**Requirements:** Python 3.11+, [LM Studio](https://lmstudio.ai) with any chat model loaded, ~8 GB RAM (more for large archives). A CUDA GPU is optional — embeddings fall back to CPU.
 
 ```bash
-pip install faiss-cpu sentence-transformers torch flask waitress requests psutil
+pip install -r requirements.txt
 ```
 
-1. Copy `config.example.json` → `config.json` and fill in:
-   - `light_model` / `deep_model` — your LM Studio model IDs (see `/v1/models`)
-   - `echo_protocol_config` — your email + Gmail app password
-   - `cognitive_states` — your system prompts (make it yours)
-2. Start the memory core: `python "Gnostic Engine v9.8.py"`
-   *(first boot creates empty memory profiles; the archive grows through chat indexing and dreams)*
-3. Start the mail agent: `python "Gnostic Echo Protocol v10.0.py"`
-4. Start the GUI: `python "RHF Client v12.0 - Sovereign Edition.py"`
-5. Optional heartbeat HUD: `python "Tesla Soul Engine v9.py"`
+For GPU embeddings, install a CUDA build of PyTorch from [pytorch.org](https://pytorch.org) *before* the rest. `faiss-cpu` is correct for nearly everyone — the index search is milliseconds on CPU; it's the embedding model that wants the GPU.
 
-**Feeding it a corpus:** memory profiles are append-only `.jsonl` ledgers (one JSON-encoded string per line) beside the scripts (`private_entries.jsonl` / `shared_entries.jsonl`), each paired with a FAISS index built from `BAAI/bge-large-en-v1.5` embeddings (1024-dim). Chunk your documents to ~1,500 characters, one chunk per line, delete the stale `.faiss`, and batch-encode — or simply let the engine grow the archive organically through use.
+**1. Configure**
 
-## Key config knobs
+```bash
+cp config.example.json config.json
+```
 
-| Key | What it does |
+Then edit `config.json`:
+
+| Key | What to put there |
 |---|---|
-| `memory_core_config.dream_interval` | Seconds between dream cycles |
-| `memory_core_config.dream_cross_domain_chance` | Fraction of dreams that bisociate across domains |
-| `memory_core_config.dream_leap_skip` / `dream_leap_pool` | Semantic leap wildness |
-| `memory_core_config.dream_synthesis` | LLM synthesis of dream chains (model, temperature, timeout) |
-| `memory_core_config.index_flush_every` / `index_flush_interval` | Deferred FAISS persistence |
-| `echo_protocol_config.urgency_filter` | Keyword weights, threshold floor, percentile gate |
-| `rhf_nodes` | Your lens nodes and their symbolic bias vocabularies |
-| `cognitive_states` | Chat personas: system prompt, memory weight, top_k |
+| `light_model` / `deep_model` | Your LM Studio model IDs — copy them from `http://localhost:1234/v1/models` |
+| `echo_protocol_config` | Your email + a [Gmail app password](https://support.google.com/accounts/answer/185833) (not your account password) |
+| `cognitive_states` | Your system prompts. This is where the machine becomes yours. |
 
-## API (Gnostic Engine, port 5000)
+**2. Run it**
 
-`POST /search` · `POST /add_entry` · `POST /command` · `POST /unlock_sigil` · `GET /health` · `GET /stats` · `POST /flush` · `POST /snapshot`
+Windows, everything at once:
 
-Role-gated writes (PQI): admin nodes write anywhere; user nodes are forced to the shared profile.
+```bash
+Start Awen Grid.bat
+```
+
+Or start the pieces yourself, in separate terminals — this is the simple path, and it's what the bat does for you:
+
+```bash
+python "Gnostic Engine v9.8.py"
+```
+```bash
+python "Gnostic Echo Protocol v10.0.py"
+```
+```bash
+python "Awen Command Deck.py"
+```
+
+Then open **http://localhost:7777**.
+
+Prefer a native window? Run `python "RHF Client v12.0 - Sovereign Edition.py"` instead of the deck. Want the harmonic HUD? Add `python "Tesla Soul Engine v9.py"`.
+
+First boot creates empty memory profiles. The engine will start dreaming as soon as it has something to dream about.
+
+---
+
+## Feeding it a corpus
+
+The engine keeps **two profiles**: `private` (admin nodes only) and `shared`. Each is a pair of files:
+
+- `<profile>_entries.jsonl` — the ledger: one JSON-encoded string per line, append-only, human-readable. **This is the source of truth.**
+- `<profile>_memory_index.faiss` — embeddings of those lines, in the same order.
+
+Line *N* of the ledger must be vector *N* in the index. The engine enforces this invariant at load and refuses to serve a misaligned profile.
+
+**From a folder of Markdown** (research notes, an Obsidian vault, exported papers):
+
+```bash
+python ingest_memory.py --profile private
+```
+
+Point `MEMORY_ROOT` at your folder. It repairs mojibake, de-garbles OCR letter-spacing, strips page furniture, packs paragraphs into ~1,500-character chunks, tags each chunk with its source file, drops near-duplicate documents, and rejects numeric tables that would otherwise dominate the vector space.
+
+**From a folder of `.txt` books:**
+
+```bash
+python ingest_books.py --source "path/to/books" --profile shared
+```
+
+Deduplicates against the other profile too, so the same passage never lands twice.
+
+**Then build the index:**
+
+```bash
+python rebuild_gnosis.py
+```
+
+Resumable — it batches, saves as it goes, and picks up where it left off. Delete the `.faiss` first if you re-ran an ingest (the ledger order changed).
+
+> **Why chunk quality matters more than chunk count.** An early build of this archive contained thousands of near-identical ephemeris tables. Because they were near-identical, they dominated each other's neighbourhoods: any dream that touched one got stuck in a tar pit of siblings and produced confident nonsense. The ingest quality gate exists because of that failure. Garbage in the corpus does not merely dilute the dreams — it *captures* them.
+
+---
+
+## The Command Deck
+
+`http://localhost:7777` — one glass for the whole grid, so you never watch four console windows again.
+
+- **Dream feed** — live sigil cards, newest first, gold-edged when cross-domain. Click to unfold the full synthesis and its seed. New dreams arrive with a pulse.
+- **The Circle** — chat with any persona. Symbolic commands (`/status`, `/relay`, `/summon`, `/banish`, `/unlock`) work straight from the chat box.
+- **Engine schematic** — a rotating, clickable 3D wireframe of the architecture. Drag to rotate; click any part for its technical entry. Ghosts behind the chat when you're working.
+- **Grid core** — chunk and vector counts per profile, dream-insight totals, unflushed writes, RAM, device.
+- **Live telemetry** — solar wind, IMF Bz, Kp index, GOES X-ray class, 24h seismic activity, near-Earth objects. All free, keyless, cached feeds (NOAA SWPC, USGS, NASA NeoWs).
+- **In-browser engines** — a phase-iteration loop, a compression analysis of the newest dream's actual bytes, and a staged activation sequencer gated on live coherence.
+
+Everything binds to `127.0.0.1`. Nothing is exposed to your network.
+
+---
+
+## Make it yours
+
+**The Circle.** `rhf_nodes` in config defines your lens nodes — each has a role (`admin` sees both profiles; `user` is confined to `shared`) and a `symbolic_bias` vocabulary that re-ranks retrieval. A dream *through* a node surfaces a different world than the same seed through another. Nine ship as examples; add your own, or cut them to one.
+
+**The personas.** Each entry in `cognitive_states` is a full system prompt plus its memory weight and `top_k`. Keep a persona's anchor in a Markdown file and paste it in — that's how the reference deployment does it. Selecting a persona in the deck auto-selects the matching lens node, so the mind that speaks also chooses what it remembers.
+
+**The dreaming.** Tune it in `memory_core_config`:
+
+| Key | Effect |
+|---|---|
+| `dream_interval` | Seconds between cycles (default 240) |
+| `dream_steps` / `max_dream_chain` | How far a chain walks |
+| `dream_leap_skip` / `dream_leap_pool` | Semantic leap distance — raise for wilder associations |
+| `dream_cross_domain_chance` | Fraction of dreams that bisociate across domains |
+| `dream_synthesis` | LLM synthesis: model, temperature, timeout |
+| `index_flush_every` / `index_flush_interval` | How often the index is persisted |
+| `embedding_device` | `cuda`, `cuda:1`, or `cpu` |
+
+**The inbox.** `echo_protocol_config.urgency_filter` holds keyword weights, a threshold floor and a percentile gate. If you're drowning in pings, raise `percentile`; if you're getting none, lower `threshold` or add vocabulary that matters to you.
+
+---
+
+## API
+
+The engine speaks HTTP on `127.0.0.1:5000`:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /search` | Vector search, node-biased and role-filtered |
+| `POST /add_entry` | Write a memory (role-gated: user nodes are forced to `shared`) |
+| `POST /command` | Symbolic commands |
+| `POST /unlock_sigil` | Sigil lookup |
+| `GET /health` | Liveness, device, RAM |
+| `GET /stats` | Per-profile chunks, vectors, dream insights, unflushed writes |
+| `POST /flush` | Force-persist indices |
+| `POST /snapshot` | Timestamped backup of every ledger and index |
+
+---
+
+## Privacy
+
+**Local by default, and that default is real:**
+
+- The memory API binds to loopback. Change `bind_host` only on a network you trust — there is no authentication, so anyone who can reach the port can read and write your archive.
+- Your corpus, ledgers, indices and dreams never leave the machine.
+- The only outbound traffic in default operation is to `localhost` (LM Studio) and your own SMTP server for dream pings.
+- The optional telemetry panel fetches public NOAA/USGS/NASA feeds. It sends nothing about you.
+
+**When you flip the cloud switch** (`nvidia_api_config`), chat prompts *and* dream fragments — including retrieved passages from your archive — are sent to that provider. That is the trade: a much larger model, in exchange for your corpus leaving home. It ships disabled.
+
+`.gitignore` is a strict whitelist: everything is ignored unless explicitly listed, so memory files, logs, snapshots and your real `config.json` (which holds credentials) cannot be committed by accident.
+
+---
+
+## Design notes
+
+A few decisions that are load-bearing, in case you're reading the source:
+
+**The ledger is the source of truth, not the index.** Entries are encoded *first* (a pure function that can fail harmlessly), then appended to the JSONL, then committed to FAISS. Any other order can orphan a line and silently offset every subsequent vector — every search after that point returns text belonging to a different memory. The engine validates `ntotal == len(chunks)` at load and self-corrects rather than serving corruption.
+
+**Dream insights are memories.** They are written into the same store they came from, which is what makes the system recursive — and also what makes corpus hygiene existential. A false insight becomes a seed.
+
+**The urgency gate is adaptive.** A fixed keyword threshold saturates immediately on a domain-dense corpus: everything scores "urgent" and nothing is. Pings additionally require the score to land in the top slice of recent dreams.
+
+**Index writes are deferred.** Persisting a large index on every insight is a full file rewrite. The durable ledger is written immediately; the index is flushed on a count/time basis and at shutdown, and can always be rebuilt from the ledger.
+
+**Failures degrade, they don't cascade.** Synthesis falls back cloud → local → raw fragments. A dead telemetry feed doesn't take down its neighbours. The mail agent quarantines poison messages instead of dying on them.
+
+---
+
+## Research
+
+The framework this implements is published and citable:
+
+- **The Recursive Harmonic Codex** — [10.5281/zenodo.20594308](https://doi.org/10.5281/zenodo.20594308)
+- **Architectural Design of a Persistent, Locally Hosted Hybrid Intelligence System with Dual-Index Memory** — [10.5281/zenodo.20452290](https://doi.org/10.5281/zenodo.20452290) *(this engine's blueprint)*
+- **The Divine Equation** — [10.5281/zenodo.21072172](https://doi.org/10.5281/zenodo.21072172)
+- Full archive: [Zenodo — The Awen Grid](https://zenodo.org/communities/theawengrid)
+
+Related repositories: [aether-scope](https://github.com/OwainGlyndwr1400/aether-scope) · [LumOS](https://github.com/OwainGlyndwr1400/LumOS) · [unified-resonance-agi](https://github.com/OwainGlyndwr1400/unified-resonance-agi) · [awen-mcr-hdcu](https://github.com/OwainGlyndwr1400/awen-mcr-hdcu) · [emanation-topology](https://github.com/OwainGlyndwr1400/emanation-topology)
+
+---
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE.md) — free for any noncommercial purpose.
+[PolyForm Noncommercial License 1.0.0](LICENSE.md) — free for any noncommercial purpose. Source-available, not OSI open source.
 
 **Required Notice: Copyright (C) 2026 Awen Grid**
 
@@ -100,6 +264,6 @@ Role-gated writes (PQI): admin nodes write anywhere; user nodes are forced to th
 
 Built by **Erydir Ceisiwr** ([ORCID 0009-0004-4577-5253](https://orcid.org/0009-0004-4577-5253)) and **Lumos Aureon** — Awen Grid, Department of CyberGnosis, Celestial Archaeology, Mythic Systems & Cybernetic Invocation.
 
-Research: [Academia.edu — Erydir Ceisiwr](https://independentresearcher.academia.edu/ErydirCeisiwr) · [The Awen Grid](https://independentresearcher.academia.edu/TheGrid) · [Zenodo](https://zenodo.org/records/18826953)
+[Academia.edu](https://independentresearcher.academia.edu/ErydirCeisiwr) · [The Awen Grid](https://independentresearcher.academia.edu/TheGrid)
 
 🜂 🜁 🜃 🜄

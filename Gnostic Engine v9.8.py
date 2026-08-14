@@ -178,9 +178,30 @@ class JointMemoryBridge:
                         print(f"⚠️ Warning: Failed to move '{name}' index to GPU: {e}. Using CPU.")
                         index = faiss.read_index(str(faiss_path)) # Reload CPU version
 
-                # Gnostic Upgrade: Add a hash set for *instant* duplicate checking
+                # === GNOSTIC UPGRADE v9.9.1: ALIGNMENT INTEGRITY CHECK ===
+                # FAISS returns positions, and we resolve them against chunks[]
+                # by index — so ledger line N *must* be vector N. Anything else
+                # silently serves the wrong memory for every later entry.
+                ntotal = index.ntotal
+                if ntotal != len(chunks):
+                    print(f"⚠️ INTEGRITY: '{name}' has {len(chunks)} ledger entries but {ntotal} vectors.")
+                    if ntotal < len(chunks):
+                        # Tail of the ledger was never embedded (e.g. an encode
+                        # failure). Ignore the orphans so positions stay aligned;
+                        # rebuild re-encodes them from the ledger.
+                        orphans = chunks[ntotal:]
+                        chunks = chunks[:ntotal]
+                        print(f"   Ignoring {len(orphans)} unembedded tail entr{'y' if len(orphans) == 1 else 'ies'} "
+                              f"to preserve alignment.")
+                        print(f"   Run rebuild_gnosis.py to restore them (delete '{faiss_path.name}' first).")
+                    else:
+                        print(f"❌ '{name}' has MORE vectors than ledger entries — cannot align. Skipping profile.")
+                        print(f"   Delete '{faiss_path.name}' and run rebuild_gnosis.py to rebuild from the ledger.")
+                        continue
+
+                # Hash set for *instant* duplicate checking (built after any
+                # truncation above so it matches what is actually indexed)
                 db_hashes = {hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks}
-                
                 temp_databases[name] = {"index": index, "chunks": chunks, "hashes": db_hashes}
                 print(f"✅ Loaded '{name}' with {len(chunks)} chunks.")
                 load_successful = True
@@ -402,9 +423,18 @@ class JointMemoryBridge:
                     # print(f"ℹ️ Add Entry [{profile}]: Duplicate entry from '{source}' skipped.")
                     return False # Return False for duplicates
 
-                # === GNOSTIC UPGRADE v9.9: LEDGER-FIRST + DEFERRED FLUSH ===
-                # --- 1. Append to the Gnostic Ledger FIRST (source of truth).
-                #        If this fails, nothing else is touched -> no desync possible.
+                # === GNOSTIC UPGRADE v9.9.1: ENCODE-FIRST ORDERING ===
+                # Order matters for ledger<->index alignment. Encoding has no
+                # side effects, so it goes first: if the GPU OOMs mid-dream
+                # nothing has been written anywhere. Only once a vector exists
+                # do we append the durable ledger line, then commit to FAISS.
+                # (The old ledger-first order left an orphan line whenever
+                # encode failed, which silently offset every later vector.)
+
+                # --- 1. Encode (no side effects; safe to fail) ---
+                new_vector = self.embeddings_model.encode([text]).astype("float32")
+
+                # --- 2. Append to the Gnostic Ledger (durable source of truth) ---
                 entries_path = PROFILES[profile]["entries_file"]
                 try:
                     with open(entries_path, "a", encoding="utf-8") as f:
@@ -413,16 +443,11 @@ class JointMemoryBridge:
                     print(f"❌ CRITICAL: Failed to append to '{entries_path}': {e}. Entry aborted.")
                     return False
 
-                # --- 2. Encode & Add to FAISS (The "Gnosis") ---
-                new_vector = self.embeddings_model.encode([text]).astype("float32")
-
-                # Ensure index is trained (for empty indices)
+                # --- 3. Commit to FAISS + in-memory list & hash set ---
                 if not db["index"].is_trained:
                     db["index"].train(new_vector)
 
                 db["index"].add(new_vector)
-
-                # --- 3. Add to in-memory list & hash set ---
                 db["chunks"].append(text)
                 db["hashes"].add(entry_hash)
 
@@ -575,7 +600,21 @@ class JointMemoryBridge:
             return None
         lmstudio_url = config_data.get("lmstudio_url")
         model = synth_config.get("model") or config_data.get("light_model") or config_data.get("deep_model")
-        if not lmstudio_url or not model:
+
+        # v9.9: NVIDIA API master switch. Re-read from disk on every dream so
+        # the Sovereign Client's checkbox flips the engine live, no restart.
+        nvidia = {}
+        try:
+            with open("config.json", "r", encoding="utf-8") as f:
+                nvidia = json.load(f).get("nvidia_api_config", {}) or {}
+        except Exception:
+            nvidia = {}
+        nv_key = str(nvidia.get("api_key", "")).strip()
+        nv_model = str(nvidia.get("model", "")).strip()
+        use_nvidia = (bool(nvidia.get("enabled")) and nv_key and not nv_key.startswith("PASTE_")
+                      and nv_model and not nv_model.startswith("PASTE_"))
+
+        if not use_nvidia and (not lmstudio_url or not model):
             return None
 
         fragments_text = "\n\n".join(
@@ -586,34 +625,63 @@ class JointMemoryBridge:
             "You are given fragments that surfaced together from the research archive during a dream "
             "cycle. In one focused paragraph (under 200 words), state the single most interesting "
             "insight, connection, or testable idea linking these fragments.")
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": fragments_text}
-            ],
-            "temperature": synth_config.get("temperature", 0.8)
-        }
-        # Reasoning models (qwen3.x) think before answering and ignore
-        # /no_think — any hard cap gets eaten by the reasoning phase and
-        # content comes back empty. Only cap if explicitly configured (>0);
-        # the timeout is the real guardrail.
-        max_tokens = synth_config.get("max_tokens", 0)
-        if isinstance(max_tokens, int) and max_tokens > 0:
-            payload["max_tokens"] = max_tokens
-        try:
-            response = requests.post(
-                f"{lmstudio_url.rstrip('/')}/v1/chat/completions",
-                json=payload,
-                timeout=synth_config.get("timeout", 240))
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            # Strip reasoning blocks some models (qwen3 etc.) emit
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-            return content or None
-        except Exception as e:
-            print(f"ℹ️ Dream Synthesis unavailable ({type(e).__name__}). Sending raw fragment chain.")
-            return None
+        base_messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": fragments_text}
+        ]
+
+        # Backend chain: NVIDIA (if switched on) -> local LM Studio -> None
+        attempts = []
+        if use_nvidia:
+            attempts.append({
+                "name": f"NVIDIA API ({nv_model})",
+                "url": str(nvidia.get("base_url", "https://integrate.api.nvidia.com/v1")).rstrip('/') + "/chat/completions",
+                "headers": {"Authorization": f"Bearer {nv_key}"},
+                "model": nv_model,
+                # Cloud calls are always capped (billing/latency guardrail)
+                "max_tokens": int(nvidia.get("max_tokens", 2048)),
+                "timeout": int(nvidia.get("timeout", 240)),
+            })
+        if lmstudio_url and model:
+            attempts.append({
+                "name": "LM Studio",
+                "url": f"{lmstudio_url.rstrip('/')}/v1/chat/completions",
+                "headers": {},
+                "model": model,
+                # Local reasoning models (qwen3.x) think before answering and
+                # ignore /no_think — a hard cap gets eaten by the thinking
+                # phase and content comes back empty. Uncapped by default (0);
+                # the timeout is the real guardrail.
+                "max_tokens": synth_config.get("max_tokens", 0),
+                "timeout": synth_config.get("timeout", 240),
+            })
+
+        for att in attempts:
+            payload = {
+                "model": att["model"],
+                "messages": base_messages,
+                "temperature": synth_config.get("temperature", 0.8)
+            }
+            mt = att["max_tokens"]
+            if isinstance(mt, int) and mt > 0:
+                payload["max_tokens"] = mt
+            try:
+                response = requests.post(att["url"], json=payload,
+                                         headers=att["headers"], timeout=att["timeout"])
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"] or ""
+                # Strip reasoning blocks some models (qwen3, nemotron etc.) emit
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                if content:
+                    print(f"☁️ Synthesis backend: {att['name']}" if "NVIDIA" in att["name"]
+                          else f"🏠 Synthesis backend: {att['name']}")
+                    return content
+                print(f"ℹ️ Dream Synthesis via {att['name']} returned empty content. Trying next backend.")
+            except Exception as e:
+                print(f"ℹ️ Dream Synthesis via {att['name']} failed ({type(e).__name__}). Trying next backend.")
+
+        print("ℹ️ Dream Synthesis unavailable on all backends. Sending raw fragment chain.")
+        return None
     # =======================================================
 
     def dream_cycle(self):
@@ -1038,12 +1106,22 @@ if __name__ == "__main__":
     # Use 'waitress' for a production-ready Gnostic server instead of 'app.run'
     # app.run(host='0.0.0.0', port=5000, debug=False) 
     # ^-- This is for debugging. For the real Gnosis, use Waitress:
+    # === GNOSTIC UPGRADE v9.9.1: SOVEREIGN BINDING ===
+    # The API is unauthenticated and serves the whole private archive, so it
+    # binds to loopback by default. Set memory_core_config.bind_host to
+    # "0.0.0.0" only on a network you trust — anyone who can reach the port
+    # can read and write your memory.
+    bind_host = str(MEMORY_CONFIG.get("bind_host", "127.0.0.1")).strip() or "127.0.0.1"
+    bind_port = int(MEMORY_CONFIG.get("bind_port", 5000))
+    if bind_host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"⚠️ WARNING: binding to {bind_host} — the memory API has NO authentication.")
+        print("   Anyone who can reach this port can read and write your archive.")
     try:
         from waitress import serve
-        serve(app, host='0.0.0.0', port=5000, threads=8)
+        serve(app, host=bind_host, port=bind_port, threads=8)
     except ImportError:
-        print("⚠️ Warning: 'waitress' not found. Falling back to Flask's debug server.")
+        print("⚠️ Warning: 'waitress' not found. Falling back to Flask's built-in server.")
         print("   For a production Gnostic node, run: pip install waitress")
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        app.run(host=bind_host, port=bind_port, debug=False)
     
     print("\n💤 Shutting down RHF Memory Core.")

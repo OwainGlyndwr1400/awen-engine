@@ -1,17 +1,42 @@
 # ============================================================
 #  Privacy-first .gitignore — EVERYTHING is ignored by default.
 #  Only explicitly whitelisted files below can ever be committed.
-#  (Memory archives, pings, configs, and research stay local.)
+#  Memory archives, dream pings, cheat sheets, logs, snapshots and
+#  the real config.json (which holds credentials) all stay local.
+#
+#  To publish a new file you must add an explicit "!name" line.
+#  Do not weaken this by removing the leading "*".
 # ============================================================
 *
 */
 
-# --- Whitelist: the public stack ---
+# --- meta ---
 !.gitignore
 !README.md
 !LICENSE.md
+!requirements.txt
 !config.example.json
+
+# --- the stack ---
 !Gnostic Engine v9.8.py
-!RHF Client v12.0 - Sovereign Edition.py
 !Gnostic Echo Protocol v10.0.py
 !Tesla Soul Engine v9.py
+!RHF Client v12.0 - Sovereign Edition.py
+
+# --- command deck ---
+!Awen Command Deck.py
+!awen_deck.html
+
+# --- corpus tooling ---
+!ingest_memory.py
+!ingest_books.py
+!rebuild_gnosis.py
+
+# --- launchers ---
+!Start Awen Grid.bat
+!stop_grid.ps1
+
+# --- docs assets (screenshots only) ---
+!docs/
+!docs/*.png
+!docs/*.jpg

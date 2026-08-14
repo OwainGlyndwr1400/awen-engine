@@ -1,0 +1,28 @@
+# The Awen Engine — Python 3.11+
+#
+#   pip install -r requirements.txt
+#
+# GPU note: faiss-cpu is correct for almost everyone — the FAISS index is
+# searched on CPU in milliseconds. It is the EMBEDDING model that uses the
+# GPU, via torch. For CUDA acceleration install a CUDA build of torch from
+# https://pytorch.org (e.g. --index-url https://download.pytorch.org/whl/cu121)
+# before installing the rest; otherwise embeddings run on CPU and still work.
+
+# --- memory core (Gnostic Engine) ---
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.2
+torch>=2.0.0
+numpy>=1.24.0
+flask>=2.3.0
+waitress>=2.1.2          # production WSGI server; falls back to flask if absent
+
+# --- shared ---
+requests>=2.31.0
+psutil>=5.9.0            # RAM safeguard + status readouts
+
+# --- Sovereign Client (GUI) ---
+# tkinter ships with CPython on Windows/macOS.
+# On Debian/Ubuntu: sudo apt install python3-tk
+
+# --- optional: Gnostic Grimoire (astro/seismic readings) ---
+# ephem>=4.1.5
