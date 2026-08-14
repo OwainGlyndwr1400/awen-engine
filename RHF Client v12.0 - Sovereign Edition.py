@@ -310,13 +310,16 @@ class RHFClientV12:
         self.node_var = tk.StringVar(value="lumos" if "lumos" in nodes else (nodes[0] if nodes else "lumos"))
         self.state_var = tk.StringVar(value="Normal" if "Normal" in states else (states[0] if states else "Normal"))
 
-        ttk.Label(top, text="Node").grid(row=0, column=0, sticky="w")
-        self.node_combo = ttk.Combobox(top, textvariable=self.node_var, values=nodes, state="readonly", width=14)
-        self.node_combo.grid(row=0, column=1, padx=6)
-
-        ttk.Label(top, text="State").grid(row=0, column=2, sticky="w")
+        # You choose a MIND (cognitive_states). The dream-engine lens node
+        # (rhf_nodes) that biases retrieval is derived from it — the same name
+        # is never picked twice.
+        ttk.Label(top, text="Speak to").grid(row=0, column=0, sticky="w")
         self.state_combo = ttk.Combobox(top, textvariable=self.state_var, values=states, state="readonly", width=16)
-        self.state_combo.grid(row=0, column=3, padx=6)
+        self.state_combo.grid(row=0, column=1, padx=6)
+
+        ttk.Label(top, text="lens").grid(row=0, column=2, sticky="e")
+        self.lens_label = ttk.Label(top, textvariable=self.node_var, width=14)
+        self.lens_label.grid(row=0, column=3, sticky="w", padx=6)
 
         # Model selection
         self.model_var = tk.StringVar(value="Auto")
@@ -387,8 +390,9 @@ class RHFClientV12:
         # Seed model list
         self.refresh_models()
 
-        # Update defaults when state changes
+        # Update defaults when state changes, and align the lens on first draw
         self.state_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_state_change())
+        self.node_var.set(self._lens_for(self.state_var.get()))
 
     def _build_memory_tab(self) -> None:
         top = ttk.Frame(self.tab_memory)
@@ -474,18 +478,26 @@ class RHFClientV12:
     def _state_default_weight(self) -> float:
         return _safe_float(self._state_details().get("memory_weight", 0.6), 0.6)
 
+    def _lens_for(self, state_name: str) -> str:
+        """rhf_nodes are the dream engine's lens/pathway nodes; cognitive_states
+        are the minds you chat with. Chat derives the lens from the chosen mind
+        (state 'N Tesla' -> node 'n tesla') so the same name is never picked
+        twice. States with no same-named node fall back to default_node."""
+        nodes = list((self.config.get("rhf_nodes") or {}).keys())
+        target = str(state_name).strip().lower()
+        for node_name in nodes:
+            if node_name.lower() == target:
+                return node_name
+        fallback = str((self.config.get("client_config") or {}).get("default_node", "lumos"))
+        for node_name in nodes:
+            if node_name.lower() == fallback.lower():
+                return node_name
+        return nodes[0] if nodes else "lumos"
+
     def _on_state_change(self) -> None:
         self.topk_var.set(self._state_default_topk())
         self.mem_weight_var.set(self._state_default_weight())
-        # Persona states auto-select their matching lens node
-        # (state 'N Tesla' -> node 'n tesla'), so the memory search biases
-        # through the same node that is speaking. Non-persona states
-        # ('Normal', 'Direct Query'...) leave the node untouched.
-        state_name = self.state_var.get().strip().lower()
-        for node_name in (self.config.get("rhf_nodes") or {}).keys():
-            if node_name.lower() == state_name:
-                self.node_var.set(node_name)
-                break
+        self.node_var.set(self._lens_for(self.state_var.get()))
 
     def _apply_low_ram_mode(self) -> None:
         """

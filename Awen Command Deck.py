@@ -91,7 +91,11 @@ def api_config():
     return jsonify({
         "states": [{"name": n, "top_k": s.get("top_k", 12)}
                    for n, s in (c.get("cognitive_states") or {}).items()],
+        # rhf_nodes are the dream engine's lens/pathway nodes. Chat derives its
+        # lens from the chosen cognitive_state rather than asking twice; this
+        # is the fallback for states that have no same-named node.
         "nodes": sorted((c.get("rhf_nodes") or {}).keys()),
+        "default_node": str((c.get("client_config") or {}).get("default_node", "lumos")),
         "nvidia": {"enabled": bool(nv.get("enabled")), "ready": nvidia_ready(c),
                    "model": str(nv.get("model", "")).strip()},
         "light_model": c.get("light_model", ""),

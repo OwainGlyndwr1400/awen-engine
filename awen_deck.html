@@ -244,8 +244,9 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
 
   <div id="inputbar">
     <div id="controls">
-      <div class="crow">NODE <select id="selnode"></select></div>
-      <div class="crow">STATE <select id="selstate"></select></div>
+      <div class="crow">SPEAK TO <select id="selstate"></select></div>
+      <div class="crow" title="dream-engine lens used to bias this search — follows the mind you chose">
+        LENS <span id="lenslabel" style="color:var(--holo)">—</span></div>
       <div class="crow">
         <label class="switch on" id="memswitch" title="inject resonant memories"><span class="track"><span class="knob"></span></span>MEM</label>
         <label class="switch" id="cloudswitch" title="route chat + dreams through NVIDIA API"><span class="track"><span class="knob"></span></span>☁</label>
@@ -531,17 +532,27 @@ $('focusbtn').onclick=()=>{ focusMode=!focusMode;
 window.addEventListener('keydown',e=>{ if(e.key==='Escape'&&focusMode)$('focusbtn').click(); });
 
 /* ============================================================ */
+/* You choose a MIND (cognitive_states). The dream-engine lens node
+   (rhf_nodes) that biases retrieval is derived from it, so the same name is
+   never picked twice — the mind that speaks also chooses what it remembers. */
+let NODES=[], DEFAULT_NODE='lumos';
+function lensFor(stateName){
+  const s=String(stateName||'').trim().toLowerCase();
+  return NODES.find(n=>n.toLowerCase()===s)
+      || NODES.find(n=>n.toLowerCase()===DEFAULT_NODE.toLowerCase())
+      || NODES[0] || 'lumos';
+}
+function refreshLens(){ $('lenslabel').textContent=lensFor($('selstate').value); }
 async function loadConfig(){
   const c=await (await fetch('/api/config')).json();
-  $('selnode').innerHTML=c.nodes.map(n=>`<option${n==='lumos'?' selected':''}>${esc(n)}</option>`).join('');
+  NODES=c.nodes||[];
+  DEFAULT_NODE=c.default_node||'lumos';
   $('selstate').innerHTML=c.states.map(s=>`<option>${esc(s.name)}</option>`).join('');
+  refreshLens();
   cloudOn=c.nvidia.enabled; nvidiaReady=c.nvidia.ready;
   $('cloudswitch').classList.toggle('on',cloudOn);
 }
-$('selstate').addEventListener('change',()=>{
-  const s=$('selstate').value.trim().toLowerCase();
-  [...$('selnode').options].forEach(o=>{ if(o.value.toLowerCase()===s) $('selnode').value=o.value; });
-});
+$('selstate').addEventListener('change',refreshLens);
 $('memswitch').onclick=()=>{ memOn=!memOn; $('memswitch').classList.toggle('on',memOn); };
 $('cloudswitch').onclick=async()=>{
   cloudOn=!cloudOn; $('cloudswitch').classList.toggle('on',cloudOn);
@@ -556,7 +567,7 @@ function sysMsg(t){ addMsg('sys',esc(t)); }
 async function send(){
   const box=$('msgbox'), text=box.value.trim(); if(!text) return;
   box.value=''; $('sendbtn').disabled=true;
-  const node=$('selnode').value, state=$('selstate').value;
+  const state=$('selstate').value, node=lensFor(state);
   addMsg('you',esc(text));
   if(text.startsWith('/')){
     const r=await (await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:text})})).json();

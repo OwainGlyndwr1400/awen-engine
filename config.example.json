@@ -821,7 +821,8 @@
         "status_poll_seconds": 5,
         "low_ram_mode_default": false,
         "max_memory_items_local": 15,
-        "max_memory_items_cloud": 28
+        "max_memory_items_cloud": 28,
+        "default_node": "lumos"
     },
     "tesla_soul_engine_config": {
         "heartbeat_file": ""

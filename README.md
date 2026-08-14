@@ -173,9 +173,13 @@ Everything binds to `127.0.0.1`. Nothing is exposed to your network.
 
 ## Make it yours
 
-**The Circle.** `rhf_nodes` in config defines your lens nodes — each has a role (`admin` sees both profiles; `user` is confined to `shared`) and a `symbolic_bias` vocabulary that re-ranks retrieval. A dream *through* a node surfaces a different world than the same seed through another. Nine ship as examples; add your own, or cut them to one.
+Two config blocks shape the machine's character, and they do different jobs:
 
-**The personas.** Each entry in `cognitive_states` is a full system prompt plus its memory weight and `top_k`. Keep a persona's anchor in a Markdown file and paste it in — that's how the reference deployment does it. Selecting a persona in the deck auto-selects the matching lens node, so the mind that speaks also chooses what it remembers.
+**`rhf_nodes` — the dream engine's lenses.** These are the pathways the engine dreams *through*. Each node has a role (`admin` reaches both profiles; `user` is confined to `shared`) and a `symbolic_bias` vocabulary that re-ranks retrieval. Every dream cycle picks a node at random, so the same seed surfaces a different world depending on which lens caught it. Nine ship as examples; add your own, or cut them to one.
+
+**`cognitive_states` — the minds you talk to.** Each entry is a full system prompt plus its memory weight and `top_k`, and it's what the dropdown in the deck and the client offers you. Keep an anchor in a Markdown file and paste it in — that's how the reference deployment does it.
+
+You only ever pick a **mind**. The lens follows automatically: a state named `Veritas` searches through the `veritas` node, so the voice that answers also chooses what it remembers. States with no same-named node fall back to `client_config.default_node`.
 
 **The dreaming.** Tune it in `memory_core_config`:
 
