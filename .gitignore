@@ -1,0 +1,17 @@
+# ============================================================
+#  Privacy-first .gitignore — EVERYTHING is ignored by default.
+#  Only explicitly whitelisted files below can ever be committed.
+#  (Memory archives, pings, configs, and research stay local.)
+# ============================================================
+*
+*/
+
+# --- Whitelist: the public stack ---
+!.gitignore
+!README.md
+!LICENSE.md
+!config.example.json
+!Gnostic Engine v9.8.py
+!RHF Client v12.0 - Sovereign Edition.py
+!Gnostic Echo Protocol v10.0.py
+!Tesla Soul Engine v9.py
