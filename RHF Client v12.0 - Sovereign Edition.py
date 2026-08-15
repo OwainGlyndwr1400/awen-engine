@@ -360,10 +360,10 @@ class RHFClientV12:
         ttk.Label(ctrl, text="index→").grid(row=0, column=4, sticky="e", padx=(10, 0))
         ttk.Combobox(ctrl, textvariable=self.profile_var, values=["private", "shared"], state="readonly", width=8).grid(row=0, column=5, padx=6)
 
-        self.index_user_var = tk.BooleanVar(value=bool(self.config.get("client_config", {}).get("index_user_messages", False)))
-        self.index_asst_var = tk.BooleanVar(value=bool(self.config.get("client_config", {}).get("index_assistant_messages", True)))
-        ttk.Checkbutton(ctrl, text="index user", variable=self.index_user_var).grid(row=1, column=4, sticky="e", padx=(10, 0))
-        ttk.Checkbutton(ctrl, text="index assistant", variable=self.index_asst_var).grid(row=1, column=5, sticky="w")
+        # One toggle: an exchange is saved whole (question + answer) or not at all
+        self.index_chat_var = tk.BooleanVar(value=bool(self.config.get("client_config", {}).get("index_chat", True)))
+        ttk.Checkbutton(ctrl, text="save chat to memory", variable=self.index_chat_var).grid(
+            row=1, column=4, columnspan=2, sticky="e", padx=(10, 0))
 
         # Chat display
         self.chat_display = scrolledtext.ScrolledText(self.tab_chat, wrap=tk.WORD, height=22, bg=self.theme.chat_bg, fg=self.theme.fg, insertbackground=self.theme.fg)
@@ -875,15 +875,20 @@ class RHFClientV12:
                 model = self._pick_model()
                 response = self.query_lmstudio(system_prompt=system_prompt, user_prompt=user_prompt, model_name=model)
 
-            # Indexing
+            # Indexing: the exchange is stored as ONE entry so the question and
+            # its answer stay bound together in memory. Saving the reply alone
+            # leaves an orphaned answer with no idea what prompted it.
             profile = self.profile_var.get().strip() or "private"
             idx_msgs: List[str] = []
-            if self.index_user_var.get():
-                ok, msg = self.add_entry(text=f"USER: {user_input}", profile=profile, node=node, source=f"RHF Client v12.0 (user/{node})")
-                idx_msgs.append(("✅ " if ok else "⚠️ ") + "[your turn] " + msg)
-            if self.index_asst_var.get() and response and not response.lower().startswith("error:"):
-                ok, msg = self.add_entry(text=response, profile=profile, node=node, source=f"RHF Client v12.0 (assistant/{node})")
-                idx_msgs.append(("✅ " if ok else "⚠️ ") + "[reply] " + msg)
+            if self.index_chat_var.get() and response and not response.lower().startswith("error:"):
+                cconf_ = self.config.get("client_config", {}) or {}
+                cap = _safe_int(cconf_.get("chat_entry_max_chars", 1800), 1800)
+                q = user_input if len(user_input) <= cap else user_input[:cap] + " …"
+                a = response if len(response) <= cap else response[:cap] + " …"
+                entry = f"CHAT ({self.state_var.get()} · {node})\nQ: {q}\n\nA: {a}"
+                ok, msg = self.add_entry(text=entry, profile=profile, node=node,
+                                         source=f"RHF Client v12.0 ({node})")
+                idx_msgs.append(("✅ " if ok else "⚠️ ") + "[exchange saved] " + msg)
 
             self.ui_queue.put(("chat_result", {"response": response, "model": model, "memories": memories, "idx": idx_msgs}))
 

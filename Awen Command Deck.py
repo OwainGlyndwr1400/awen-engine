@@ -478,12 +478,18 @@ def api_chat():
     except Exception as e:
         return jsonify({"response": f"⚠ LLM call failed: {e}", "model": "", "mem_count": mem_count, "indexed": False})
 
-    # Index the reply into memory (assistant only, per client_config)
+    # Index the exchange as ONE entry: question and answer stay together, so a
+    # dream that later surfaces this fragment still knows what was asked.
+    # (Saving replies alone leaves orphaned answers with no context.)
     indexed = False
-    if bool(cconf.get("index_assistant_messages", True)):
+    if bool(cconf.get("index_chat", True)):
+        cap = int(cconf.get("chat_entry_max_chars", 1800))
+        q = message if len(message) <= cap else message[:cap] + " …"
+        a = content if len(content) <= cap else content[:cap] + " …"
+        entry = f"CHAT ({state_name or 'node'} · {node})\nQ: {q}\n\nA: {a}"
         try:
             r = http.post(f"{bridge(c)}/add_entry",
-                          json={"text": content, "profile": "private", "node": node,
+                          json={"text": entry, "profile": "private", "node": node,
                                 "source": f"Awen Command Deck ({node})"}, timeout=60)
             indexed = r.ok and r.json().get("status") == "success"
         except Exception:

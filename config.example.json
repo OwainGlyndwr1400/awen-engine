@@ -816,13 +816,13 @@
         "memory_chunk_max_chars": 700,
         "max_memory_items_in_prompt": 25,
         "include_memory_metrics": true,
-        "index_user_messages": false,
-        "index_assistant_messages": true,
         "status_poll_seconds": 5,
         "low_ram_mode_default": false,
         "max_memory_items_local": 15,
         "max_memory_items_cloud": 28,
-        "default_node": "lumos"
+        "default_node": "lumos",
+        "index_chat": true,
+        "chat_entry_max_chars": 1800
     },
     "tesla_soul_engine_config": {
         "heartbeat_file": ""
