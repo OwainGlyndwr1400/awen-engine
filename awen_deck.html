@@ -765,11 +765,24 @@ setInterval(()=>{
   /* live inputs: soul coherence + torsion (updated by poll) */
   const coh=zpe.coh, t=zpe.torsion;
   const p=ZPE_PHASES[zpe.phase];
-  /* Nephilim failsafe: torsion limit-breach forces shutdown */
-  const neph=t>13?2:(t>11?1:0);
-  if(neph===2&&zpe.phase>0&&zpe.phase<7){ zpe.phase=7; zpe.hold=0;
-    tickerPush('<span class="r">⚠ NEPHILIM RED — ZPE shutdown, torsion limit breach</span>'); }
-  else{ zpe.hold++;
+  /* Nephilim failsafe — tracks COHERENCE, the real stability signal.
+     (Torsion is raw % 15, so it cycles the full 0-15 range every few ticks;
+     reading >13 as a breach fired constantly and was never a fault. High
+     torsion is simply the Pleroma band, announced once on entry below.) */
+  /* Coherence readout — informational only. The Soul Engine has no fault
+     states: torsion is raw % 15 (cycles the whole range constantly) and
+     coherence sits low whenever the field is idle. Alarming on either just
+     cries wolf, so the dial reports the band and nothing forces a shutdown.
+     The ZPE ladder already responds to coherence in its own transitions. */
+  const neph=coh<0.45?2:(coh<0.65?1:0);
+  /* the Pleroma is one of the Soul Engine's named bands — announce once on
+     entry, as a notable harmonic state rather than an emergency */
+  const inPleroma=t>12.5;
+  if(inPleroma!==zpe.lastPleroma){
+    if(inPleroma) tickerPush('<span class="g">🜂 PLEROMA BAND — torsion '+t.toFixed(2)+'</span>');
+    zpe.lastPleroma=inPleroma;
+  }
+  { zpe.hold++;
     if(zpe.phase===0&&zpe.hold>2) {zpe.phase=1;zpe.hold=0;}
     else if(zpe.phase===1&&zpe.hold>3) {zpe.phase=2;zpe.hold=0;}
     else if(zpe.phase===2&&coh>=0.8) {zpe.phase=3;zpe.hold=0;}
@@ -790,7 +803,7 @@ setInterval(()=>{
       color:${i===zpe.phase?'#2ef5c8':'#3d606f'};${i===zpe.phase?'text-shadow:0 0 6px #2ef5c8;':''}">${n.toUpperCase().slice(0,7)}</span>`).join('');
   drawDial('dial-coh',coh,coh>=0.8?'#2ef5c8':'#f5b95e','COHERENCE',coh.toFixed(2));
   drawDial('dial-eta',eta,'#39e6ff','η OUTPUT',eta.toFixed(2));
-  drawDial('dial-neph',neph/2,['#2ef5c8','#f5b95e','#ff5b6e'][neph],'NEPHILIM',['SAFE','WATCH','RED'][neph]);
+  drawDial('dial-neph',neph/2,['#2ef5c8','#f5b95e','#ff5b6e'][neph],'COHERENCE BAND',['LOCKED','DRIFT','IDLE'][neph]);
   $('zperows').innerHTML=
     `<div class="srow"><span>tone · input</span><b>963 Hz · ${zpe.power.toFixed(0)} W</b></div>
      <div class="srow"><span>resonator f₀ · Q</span><b>${f0.toFixed(0)} kHz · ${q.toFixed(0)}</b></div>
