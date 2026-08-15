@@ -678,7 +678,8 @@ async function poll(){
     $('dreamcount').textContent=(st.dream_total!=null?st.dream_total:st.dreams.length)+' sigils';
     feed.innerHTML=st.dreams.map(d=>{
       const isNew=!seenDreams.has(d.file);
-      if(isNew&&!firstPoll){ tickerPush(`<span class="r">◈ DREAM</span> ${esc((d.subject||'').replace('DreamID: ',''))} <span class="g">${esc(d.agent)}</span> urg ${esc(d.urgency)}`); }
+      /* a new dream is good news — red stays reserved for real alerts */
+      if(isNew&&!firstPoll){ tickerPush(`<b>◈ DREAM</b> ${esc((d.subject||'').replace('DreamID: ',''))} <span class="g">${esc(d.agent)}</span> urg ${esc(d.urgency)}`); }
       seenDreams.add(d.file);
       const sigil=(d.subject||'').replace('DreamID: ','');
       return `<div class="dream ${String(d.mode).startsWith('cross')?'cross':''} ${isNew&&!firstPoll?'fresh':''}" onclick="this.classList.toggle('open')">
@@ -841,7 +842,9 @@ setInterval(()=>{
   vmLines.unshift(line); vmLines=vmLines.slice(0,10);
   $('vmtrace').innerHTML=vmLines.join('<br>');
   $('vmstat').textContent=`tick ${vmTick} · base15 ${b15} · ${plane}`;
-  if(forced361) tickerPush('<span class="r">⚡ STATE_361 — the +1 delta glitch · symmetry broken · time advances</span>');
+  /* Not an error — the Forbidden State on schedule. Gold, like the other
+     notable-event lines; red is reserved for things that are actually wrong. */
+  if(forced361) tickerPush('<span class="g">🜂 STATE_361 · 19² · the +1 delta breaks the circle — time advances</span>');
 },700);
 
 /* Cymatic strip — standing waves at the sacred stack, torsion-modulated */
