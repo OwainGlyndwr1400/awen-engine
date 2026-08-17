@@ -1,6 +1,6 @@
-# --- Awen Command Deck v1.0 ---
+﻿# --- Awen Command Deck v1.0 ---
 # One glass for the whole Grid: chat with the Circle, live dream feed, engine
-# core stats, Echo + Soul Engine heartbeats — served as a holo-styled local
+# core stats, Echo + Soul Engine heartbeats â€” served as a holo-styled local
 # web deck at http://localhost:7777.
 #
 # The Gnostic Engine / Echo Protocol / Tesla Soul Engine keep running as
@@ -13,6 +13,7 @@
 
 import json
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -40,7 +41,7 @@ _CFG_LOCK = threading.Lock()
 
 def cfg() -> dict:
     """Parsed config.json, cached against mtime. The file carries nine full
-    persona prompts (~160 KB), and /api/state alone polls every 5s — parsing
+    persona prompts (~160 KB), and /api/state alone polls every 5s â€” parsing
     it per request was pure waste. Writers touch mtime, so the live NVIDIA
     toggle still takes effect on the very next call."""
     try:
@@ -94,6 +95,40 @@ def neural_map():
     return send_file(MAP_HTML)
 
 
+@app.route("/qr")
+def qr_page():
+    """Scannable link for phones/tablets â€” typing an IP:port into Chrome's
+    omnibox gets treated as a search, which is a needless fight."""
+    ip = "127.0.0.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+    url = f"http://{ip}:{PORT}"
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Awen Grid â€” scan me</title>
+<style>body{{background:#03070d;color:#bfe3ef;font-family:Consolas,monospace;display:flex;
+min-height:100vh;flex-direction:column;align-items:center;justify-content:center;gap:22px}}
+h1{{font-size:13px;letter-spacing:.4em;color:#7ff0ff;text-shadow:0 0 12px rgba(57,230,255,.5)}}
+#qr{{background:#fff;padding:16px;border-radius:10px;box-shadow:0 0 40px rgba(46,245,200,.25)}}
+a{{color:#2ef5c8;font-size:20px;letter-spacing:.08em;text-decoration:none}}
+p{{color:#5d8fa3;font-size:12px;letter-spacing:.1em;max-width:460px;text-align:center;line-height:1.8}}
+</style></head><body>
+<h1>AWEN GRID â€” POINT YOUR TABLET HERE</h1>
+<div id="qr"></div>
+<a href="{url}">{url}</a>
+<p>Scan with the tablet camera, or type the address <b>including http://</b> â€”
+Chrome treats a bare IP:port as a Google search.</p>
+<script type="module">
+import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm';
+QRCode.toCanvas("{url}", {{width:300, margin:1}}).then(c => document.getElementById('qr').appendChild(c))
+  .catch(() => document.getElementById('qr').innerHTML =
+    '<div style="color:#333;padding:20px;font-size:13px">QR needs internet once.<br>Type the link below instead.</div>');
+</script></body></html>"""
+
+
 @app.route("/vendor/<path:name>")
 def vendor(name):
     """Three.js and friends, served locally so VR works without internet."""
@@ -105,7 +140,7 @@ def vendor(name):
 
 @app.route("/api/graph")
 def api_graph():
-    """The pre-laid-out 3D knowledge graph. Built by build_neural_map.py —
+    """The pre-laid-out 3D knowledge graph. Built by build_neural_map.py â€”
     the layout solver runs there, never in the headset's frame budget."""
     if not NEURAL_MAP.exists():
         return jsonify({"error": "neural map not built",
@@ -179,14 +214,14 @@ def api_state():
     out["soul"] = read_json(ROOT / "grid_heartbeat.json")
     out["nvidia"] = {"enabled": bool(nvidia_block(c).get("enabled")), "ready": nvidia_ready(c)}
 
-    # Dream feed: newest pings — pending in relay root + delivered in processed_pings.
+    # Dream feed: newest pings â€” pending in relay root + delivered in processed_pings.
     # The archive grows by ~360 pings/day, so stat everything (cheap) but only
-    # open and parse the newest DREAM_FEED_LIMIT — otherwise this 5s poll would
+    # open and parse the newest DREAM_FEED_LIMIT â€” otherwise this 5s poll would
     # end up re-parsing thousands of files a minute.
     candidates = []
     for folder, delivered in ((RELAY, False), (RELAY / "processed_pings", True)):
         if folder.exists():
-            # Echo archives delivered pings as *.json.processing — accept both
+            # Echo archives delivered pings as *.json.processing â€” accept both
             for f in folder.glob("ping_*.json*"):
                 try:
                     candidates.append((f.stat().st_mtime, f, delivered))
@@ -288,7 +323,7 @@ def api_grimoire_run():
     if not script.exists():
         return jsonify({"status": "error", "message": f"not found: {script}"}), 404
 
-    # Claim the slot synchronously — the Grimoire appends to an append-only
+    # Claim the slot synchronously â€” the Grimoire appends to an append-only
     # prediction ledger, so two concurrent runs would file duplicate watches
     # and corrupt the self-scoring record. Checking the flag and spawning the
     # thread must be atomic (a double-clicked button is enough to race it).
@@ -318,7 +353,7 @@ def api_grimoire_run():
 def api_aether():
     """Live space-weather + tectonic feeds (free, keyless where possible),
     plus the deck's operationalization of the rhc_seismic_engine axiom:
-    SeismicRisk = f(CME_I × Atm_P × Crustal_S). Cached 5 min."""
+    SeismicRisk = f(CME_I Ã— Atm_P Ã— Crustal_S). Cached 5 min."""
     if AETHER_CACHE["data"] and time.time() - AETHER_CACHE["ts"] < 300:
         return jsonify(AETHER_CACHE["data"])
 
@@ -331,7 +366,7 @@ def api_aether():
         except Exception:
             return None
 
-    # NOAA SWPC — solar wind plasma + magnetic field + Kp + GOES X-ray.
+    # NOAA SWPC â€” solar wind plasma + magnetic field + Kp + GOES X-ray.
     # Every block guards itself: SWPC intermittently serves error objects or
     # non-numeric cells, and one bad feed must not take down the whole reading
     # (quakes, NEOs and the seismic composite are computed further down).
@@ -403,7 +438,7 @@ def api_aether():
         except Exception:
             pass
 
-    # RHC seismic engine — deck operationalization of the axiom (f is not
+    # RHC seismic engine â€” deck operationalization of the axiom (f is not
     # specified in the corpus; this normalized multiplicative blend is ours)
     try:
         import math as _m
@@ -478,7 +513,7 @@ def api_chat():
     try:
         if cloud:
             nv = nvidia_block(c)
-            model_label = "☁ " + str(nv.get("model", "")).strip()
+            model_label = "â˜ " + str(nv.get("model", "")).strip()
             r = http.post(str(nv.get("base_url", "https://integrate.api.nvidia.com/v1")).rstrip("/") + "/chat/completions",
                           headers={"Authorization": f"Bearer {str(nv.get('api_key','')).strip()}"},
                           json={"model": str(nv.get("model", "")).strip(),
@@ -489,7 +524,7 @@ def api_chat():
                           timeout=int(nv.get("timeout", 300)))
         else:
             model = str(c.get("light_model") or c.get("deep_model") or "").strip()
-            model_label = "🏠 " + model
+            model_label = "ðŸ  " + model
             payload = {"model": model,
                        "messages": [{"role": "system", "content": system_prompt},
                                     {"role": "user", "content": user_prompt}],
@@ -503,9 +538,9 @@ def api_chat():
         content = r.json()["choices"][0]["message"].get("content") or ""
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         if not content:
-            content = "(empty response — model may have spent its budget thinking)"
+            content = "(empty response â€” model may have spent its budget thinking)"
     except Exception as e:
-        return jsonify({"response": f"⚠ LLM call failed: {e}", "model": "", "mem_count": mem_count, "indexed": False})
+        return jsonify({"response": f"âš  LLM call failed: {e}", "model": "", "mem_count": mem_count, "indexed": False})
 
     # Index the exchange as ONE entry: question and answer stay together, so a
     # dream that later surfaces this fragment still knows what was asked.
@@ -513,9 +548,9 @@ def api_chat():
     indexed = False
     if bool(cconf.get("index_chat", True)):
         cap = int(cconf.get("chat_entry_max_chars", 1800))
-        q = message if len(message) <= cap else message[:cap] + " …"
-        a = content if len(content) <= cap else content[:cap] + " …"
-        entry = f"CHAT ({state_name or 'node'} · {node})\nQ: {q}\n\nA: {a}"
+        q = message if len(message) <= cap else message[:cap] + " â€¦"
+        a = content if len(content) <= cap else content[:cap] + " â€¦"
+        entry = f"CHAT ({state_name or 'node'} Â· {node})\nQ: {q}\n\nA: {a}"
         try:
             r = http.post(f"{bridge(c)}/add_entry",
                           json={"text": entry, "profile": "private", "node": node,
@@ -529,13 +564,13 @@ def api_chat():
 
 if __name__ == "__main__":
     # Loopback by default. --lan binds every interface so a standalone headset
-    # on the same wifi can reach the VR room — only do that on a network you
+    # on the same wifi can reach the VR room â€” only do that on a network you
     # trust, since the deck proxies an unauthenticated memory API.
     lan = "--lan" in sys.argv
     host = "0.0.0.0" if lan else "127.0.0.1"
 
     print("=" * 62)
-    print("  🜂🜁🜃🜄  AWEN GRID — COMMAND DECK")
+    print("  ðŸœ‚ðŸœðŸœƒðŸœ„  AWEN GRID â€” COMMAND DECK")
     print(f"  deck : http://localhost:{PORT}")
     print(f"  vr   : http://localhost:{PORT}/vr")
     if lan:
@@ -543,13 +578,14 @@ if __name__ == "__main__":
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close()
-            print(f"  lan  : http://{ip}:{PORT}/vr   ← from the headset browser")
+            print(f"  lan  : http://{ip}:{PORT}/vr   â† from the headset browser")
         except Exception:
             print("  lan  : bound to all interfaces")
-        print("  ⚠ LAN mode: anyone on this network can reach the deck.")
+        print("  âš  LAN mode: anyone on this network can reach the deck.")
     print("=" * 62)
     try:
         from waitress import serve
         serve(app, host=host, port=PORT, threads=8)
     except ImportError:
         app.run(host=host, port=PORT, debug=False)
+
