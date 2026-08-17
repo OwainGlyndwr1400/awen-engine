@@ -40,6 +40,17 @@
 !ingest_books.py
 !rebuild_gnosis.py
 
+# --- instruments (v2) ---
+# The BUILDERS ship; their OUTPUT never does. atlas.json / regulus_corridor.json
+# / neural_map.json are all derived from the local corpus — the atlas in
+# particular carries cluster labels drawn from the conversations lane, which is
+# the one lane that must never leave the machine. docs/ only admits *.png|*.jpg,
+# so those artifacts are already blocked; this note is here so nobody "fixes"
+# that by adding !docs/*.json.
+!build_atlas.py
+!build_regulus_corridor.py
+!runtime_vs_spec.py
+
 # --- launchers ---
 !Start Awen Grid.bat
 !stop_grid.ps1

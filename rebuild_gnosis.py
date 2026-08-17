@@ -11,10 +11,29 @@ import time
 print("--- 🌀 GNOSTIC REBUILD PROTOCOL (HARMONIC BATCHING) INITIATED ---")
 
 # --- CONFIG (Must match your main script) ---
+# Only the L2 lanes. This script builds IndexFlatL2 over RAW (un-normalised)
+# vectors and reads a dict record's 'chunk' field.
 PROFILES = {
-    "private": {"faiss_file": "private_memory_index.faiss", "entries_file": "private_entries.jsonl"},
+    "knowledge": {"faiss_file": "knowledge_memory_index.faiss", "entries_file": "knowledge_entries.jsonl"},
     "shared": {"faiss_file": "shared_memory_index.faiss", "entries_file": "shared_entries.jsonl"}
 }
+
+# === DO NOT ADD 'conversations' HERE ===
+# It would corrupt the lane three separate ways, all of them silent:
+#   1. metric   — conversations is IndexFlatIP (cosine) over L2-NORMALISED
+#                 vectors. This script writes IndexFlatL2 over raw ones.
+#   2. scale    — it never calls faiss.normalize_L2, so scores would rank by
+#                 vector magnitude instead of angle.
+#   3. records  — its entries are dicts keyed 'text', but the loop below reads
+#                 data['chunk']. Every dict record would be SKIPPED rather than
+#                 erroring, so the index would come out short and every chunk
+#                 after the first skip would resolve to the wrong memory.
+# Rebuilding that lane means re-copying it from LumOS's identity.faiss/.jsonl,
+# which needs no re-embedding at all. See three-lanes note / IDENTITY_LANE.md.
+FORBIDDEN = {"conversations"}
+for _bad in FORBIDDEN & set(PROFILES):
+    raise SystemExit(f"❌ REFUSING to rebuild '{_bad}' — see the note above. "
+                     f"Re-copy it from LumOS instead.")
 MODEL_NAME = "BAAI/bge-large-en-v1.5" # The NEW Gnostic model
 DEVICE = 'cuda'
 

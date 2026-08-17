@@ -44,6 +44,7 @@ body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:80
   #left,#right{max-height:none}
   #left .pbody{max-height:44vh}
   #vmtrace{height:112px}
+  #lion{height:128px}
   #msgbox{font-size:16px}            /* stops mobile browsers zooming on focus */
   #lamps{gap:9px;font-size:10px}
   .title{font-size:12px;letter-spacing:.28em}
@@ -96,6 +97,30 @@ body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:80
 .dream.open .dsyn{display:block}
 .dseed{font-size:11px; color:var(--dim); margin-top:5px; line-height:1.45; max-height:34px; overflow:hidden}
 .dream.open .dseed{max-height:none}
+
+/* ---------- the lion watches the lion ----------
+   Regulus on the eastern horizon, drawn from computed astronomy. Every angle
+   on this canvas comes from /api/regulus + the spherical triangle; nothing here
+   is on a timer except the star's twinkle, which is openly ornament.          */
+#lionwrap{padding:0 0 7px}
+#lion{width:100%; height:150px; display:block; cursor:crosshair}
+#lionctl{display:flex; gap:7px; align-items:center; padding:0 11px 6px}
+#regsite{flex:1; min-width:0; background:rgba(6,16,28,.8); color:var(--cyan-soft);
+  border:1px solid rgba(57,230,255,.22); border-radius:4px; font-family:var(--mono);
+  font-size:9.5px; letter-spacing:.06em; padding:2px 4px}
+#regyear{flex:1.15; min-width:0; accent-color:#f5b95e; height:3px}
+#regyearlab{font-family:var(--mono); font-size:9.5px; color:var(--gold);
+  letter-spacing:.04em; min-width:62px; text-align:right}
+#regrows{padding:0 12px}
+.rrow{display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  font-family:var(--mono); font-size:10px; line-height:1.85; color:var(--dim)}
+.rrow b{color:var(--cyan-soft); font-weight:400; letter-spacing:.03em}
+.rrow b.hit{color:var(--gold); text-shadow:0 0 9px rgba(245,185,94,.6)}
+.rrow b.under{color:var(--dim)}
+.rnote{font-size:9px; line-height:1.55; color:var(--dim); opacity:.75; margin-top:5px;
+  padding-top:5px; border-top:1px solid rgba(57,230,255,.1)}
+.rnote a{color:var(--cyan-dim); text-decoration:none}
+.rnote a:hover{color:var(--cyan)}
 
 /* ---------- center: chat + hologram ---------- */
 #mid{grid-area:mid; position:relative}
@@ -240,6 +265,18 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
     <div class="phead" style="border-top:1px solid var(--panel-edge)">URE-VM · QIS-72 <span class="sub" id="vmstat"></span></div>
     <div id="vmtrace" style="height:148px;overflow:hidden;padding:6px 10px;font-family:var(--mono);
       font-size:9.5px;line-height:1.5;color:var(--cyan-dim)"></div>
+
+    <div class="phead" style="border-top:1px solid var(--panel-edge)">THE LION WATCHES
+      <span class="sub" id="regsub">—</span></div>
+    <div id="lionwrap">
+      <canvas id="lion"></canvas>
+      <div id="lionctl">
+        <select id="regsite" title="observer latitude — the only thing that changes the altitude"></select>
+        <input type="range" id="regyear" title="drag through the precession cycle">
+        <span id="regyearlab">—</span>
+      </div>
+      <div id="regrows"></div>
+    </div>
   </div>
 
   <div id="mid" class="panel">
@@ -1040,6 +1077,213 @@ async function pollAether(){
   }catch(e){ $('aetherrows').innerHTML='<div class="srow"><span style="color:var(--dim)">aether feed error</span></div>'; }
 }
 pollAether(); setInterval(pollAether,300000);
+
+/* ============================================================
+   THE LION WATCHES THE LION
+   Regulus on the eastern horizon, at whatever site and epoch you pick.
+
+   The panel stores no angles. /api/regulus gives declination per epoch
+   (astropy, built by build_regulus_corridor.py); everything drawn here comes
+   out of one spherical triangle:
+
+       cos A = (sin δ − sin h·sin φ) / (cos h·cos φ)
+       h(A=90°) = asin( sin δ / sin φ )
+
+   Change the site and the sightline visibly swings, because latitude is the
+   only term left once you fix the bearing at due east. That is the Gowerton
+   result: same star, same 90.00°, altitude 15° instead of Giza's 24°.
+   ============================================================ */
+const RAD=Math.PI/180, DEG=180/Math.PI;
+let REG=null, regSiteIdx=0, regYearIdx=0;
+
+const lion=$('lion'), lctx=lion.getContext('2d');
+
+/* --- the sigil: unit-box profile, +x east, +y up, ground at y=0 ---------- */
+const SPHINX=[
+  /* rump · back · shoulder rise */
+  [[.07,0],[.045,.13],[.065,.27],[.125,.335],[.27,.355],[.43,.352],[.525,.342],[.575,.385]],
+  /* neck into the nemes */
+  [[.575,.385],[.598,.5],[.612,.567]],
+  /* nemes headdress — back edge, crown, front edge */
+  [[.612,.567],[.598,.7],[.634,.783],[.722,.788],[.747,.7],[.736,.618]],
+  /* lappet falling down the chest */
+  [[.736,.618],[.75,.5],[.716,.468],[.7,.552]],
+  /* brow band + jaw */
+  [[.656,.724],[.74,.719]],
+  [[.736,.618],[.724,.583],[.697,.574]],
+  /* foreleg down to the paws, paws stretched east */
+  [[.598,.5],[.662,.3],[.7,.12],[.72,.03]],
+  [[.72,.03],[.952,.022],[.966,0]],
+  /* haunch */
+  [[.14,.045],[.205,.2],[.305,.243]],
+  /* tail curling round the flank */
+  [[.075,.1],[.03,.062],[.052,.018],[.122,.014]],
+];
+const SPHINX_EYE=[.706,.686];
+/* Khufu · Khafre · Menkaure, west of the Sphinx and behind it */
+const PYRAMIDS=[[[.02,0],[.155,.44],[.29,0]],[[.235,0],[.35,.375],[.465,0]],[[.425,0],[.5,.235],[.575,0]]];
+
+function lionResize(){
+  const r=lion.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  lion.width=r.width*d; lion.height=r.height*d; lctx.setTransform(d,0,0,d,0,0);
+  return {w:r.width,h:r.height};
+}
+
+/* altitude at which a star of declination δ crosses azimuth exactly 90.00° */
+function altAtDueEast(dec,lat){
+  const s=Math.sin(dec*RAD)/Math.sin(lat*RAD);
+  return Math.abs(s)>1?null:Math.asin(s)*DEG;
+}
+
+function drawLion(t){
+  if(!REG){ requestAnimationFrame(drawLion); return; }
+  const {w,h}=lionResize();
+  lctx.clearRect(0,0,w,h);
+
+  const site=REG.sites[regSiteIdx], dec=REG.stars.regulus.dec[regYearIdx];
+  const alt=altAtDueEast(dec,site.lat);
+  const ground=h*0.855, scale=h*0.46;
+  /* the Sphinx sits left-of-centre; the pyramids get their own box further
+     west so they stand behind it instead of being drawn through it. */
+  const X=u=>w*0.155+u*(w*0.40), Y=v=>ground-v*scale;
+  const PX=u=>w*0.012+u*(w*0.155), PY=v=>ground-v*(h*0.40);
+
+  /* horizon */
+  lctx.strokeStyle='rgba(46,245,200,.22)'; lctx.lineWidth=1; lctx.shadowBlur=0;
+  lctx.beginPath(); lctx.moveTo(0,ground); lctx.lineTo(w,ground); lctx.stroke();
+  lctx.fillStyle='rgba(93,143,163,.5)'; lctx.font='8px Consolas,monospace';
+  lctx.fillText('EAST  az 90.00°',w-84,ground+12);
+
+  /* pyramids — behind, so dimmer and smaller */
+  lctx.strokeStyle='rgba(21,94,115,.9)'; lctx.lineWidth=1;
+  for(const p of PYRAMIDS){
+    lctx.beginPath(); lctx.moveTo(PX(p[0][0]),PY(p[0][1]));
+    lctx.lineTo(PX(p[1][0]),PY(p[1][1])); lctx.lineTo(PX(p[2][0]),PY(p[2][1])); lctx.stroke();
+  }
+
+  /* the sightline, at the computed altitude, from the eye.
+     The ANGLE is exact; the drawn length is clipped to the canvas, because a
+     150px-tall panel cannot show a 24° ray over 400px of run. Shortening the
+     segment keeps the bearing honest — stretching the angle would not. */
+  const ex=X(SPHINX_EYE[0]), ey=Y(SPHINX_EYE[1]);
+  const up=(alt===null)?null:alt*RAD;
+  if(up!==null){
+    let len=w-ex-16;
+    const t=Math.tan(up);
+    if(t>0)      len=Math.min(len,(ey-11)/t);           /* don't leave the top */
+    else if(t<0) len=Math.min(len,(ground+16-ey)/-t);   /* or the bottom */
+    const sx=ex+len, sy=ey-len*t;
+    const below=alt<0;
+    lctx.save();
+    lctx.setLineDash([5,4]);
+    lctx.strokeStyle=below?'rgba(93,143,163,.35)':'rgba(245,185,94,.45)';
+    lctx.lineWidth=1; lctx.beginPath(); lctx.moveTo(ex,ey); lctx.lineTo(sx,sy); lctx.stroke();
+    lctx.restore();
+
+    /* altitude arc + label */
+    if(!below&&alt>0.4){
+      lctx.strokeStyle='rgba(245,185,94,.3)'; lctx.lineWidth=.9;
+      lctx.beginPath(); lctx.arc(ex,ey,44,-up,0); lctx.stroke();
+      lctx.fillStyle='rgba(245,185,94,.75)'; lctx.font='8.5px Consolas,monospace';
+      lctx.fillText(alt.toFixed(2)+'°',ex+49,ey-20*Math.tan(up/2)-1);
+    }
+
+    /* Regulus */
+    const tw=0.72+0.28*Math.sin(t/420);                 /* twinkle: ornament, and only this */
+    lctx.save();
+    lctx.globalAlpha=below?0.28:1;
+    lctx.shadowColor='#fff3c4'; lctx.shadowBlur=below?4:17*tw;
+    lctx.fillStyle=below?'#5d8fa3':'#fff6d8';
+    lctx.beginPath(); lctx.arc(sx,sy,below?1.7:2.7,0,6.2832); lctx.fill();
+    if(!below){
+      lctx.strokeStyle='rgba(255,246,216,'+(0.85*tw)+')'; lctx.lineWidth=1;
+      const f=10*tw;
+      lctx.beginPath();
+      lctx.moveTo(sx-f,sy); lctx.lineTo(sx+f,sy);
+      lctx.moveTo(sx,sy-f); lctx.lineTo(sx,sy+f); lctx.stroke();
+    }
+    lctx.restore();
+    lctx.shadowBlur=0;
+    lctx.fillStyle=below?'rgba(93,143,163,.6)':'rgba(255,246,216,.8)';
+    lctx.font='8.5px Consolas,monospace';
+    lctx.fillText(below?'REGULUS ↓':'REGULUS',sx-30,sy-11);
+  }
+
+  /* the Sphinx itself */
+  lctx.strokeStyle='#2ef5c8'; lctx.lineWidth=1.25;
+  lctx.shadowColor='#2ef5c8'; lctx.shadowBlur=6;
+  lctx.lineJoin='round'; lctx.lineCap='round';
+  for(const seg of SPHINX){
+    lctx.beginPath(); lctx.moveTo(X(seg[0][0]),Y(seg[0][1]));
+    for(let i=1;i<seg.length;i++) lctx.lineTo(X(seg[i][0]),Y(seg[i][1]));
+    lctx.stroke();
+  }
+  /* the eye that watches */
+  lctx.fillStyle='#fff6d8'; lctx.shadowColor='#fff6d8'; lctx.shadowBlur=7;
+  lctx.beginPath(); lctx.arc(ex,ey,1.5,0,6.2832); lctx.fill();
+  lctx.shadowBlur=0;
+
+  requestAnimationFrame(drawLion);
+}
+
+function regYearLabel(i){
+  const y=REG.years.start+i*REG.years.step;
+  return y>0?y+' CE':(1-y)+' BCE';
+}
+
+function regUpdate(){
+  const site=REG.sites[regSiteIdx], dec=REG.stars.regulus.dec[regYearIdx];
+  const alt=altAtDueEast(dec,site.lat);
+  $('regyearlab').textContent=regYearLabel(regYearIdx);
+  $('regsub').textContent=site.lat.toFixed(2)+'°N';
+
+  /* which star sits closest to due east at this epoch, from this site?
+     shipped controls — the panel must never imply Regulus is alone here. */
+  let best=null;
+  for(const k in REG.stars){
+    const a=altAtDueEast(REG.stars[k].dec[regYearIdx],site.lat);
+    if(a===null||a<0) continue;
+    if(!best||a<best.alt) best={k,alt:a,mag:REG.stars[k].mag,label:REG.stars[k].label};
+  }
+  const near=alt!==null&&alt>=0&&alt<2.0;
+  const rows=[
+    ['declination δ',dec.toFixed(4)+'°',''],
+    ['altitude at az 90.00°',alt===null?'never':alt.toFixed(2)+'°',
+      alt===null||alt<0?'under':(near?'hit':'')],
+    ['observer φ',site.lat.toFixed(4)+'°',''],
+  ];
+  $('regrows').innerHTML=rows.map(r=>
+      `<div class="rrow"><span>${r[0]}</span><b class="${r[2]}">${r[1]}</b></div>`).join('')
+    +`<div class="rnote">${esc(site.note)}<br><br>`
+    +`<b style="color:var(--dim)">Nearest the horizon here:</b> `
+    +(best?`${esc(best.label)} (mag ${best.mag.toFixed(2)}) at ${best.alt.toFixed(2)}°`:'none above horizon')
+    +`. Precession walks <i>every</i> near-ecliptic star through due east eventually — `
+    +`the crossing alone proves nothing. The claim is the conjunction: brightest star in Leo, `
+    +`the Lion's Heart, at 90.00° from a lion-bodied monument, in that monument's epoch.<br><br>`
+    +REG.papers.map(p=>`<a href="https://doi.org/${p.doi}" target="_blank">▸ ${esc(p.title)}</a>`).join('<br>')
+    +`</div>`;
+}
+
+async function loadRegulus(){
+  try{
+    const r=await fetch('/api/regulus'); if(!r.ok) throw 0;
+    REG=await r.json();
+    $('regsite').innerHTML=REG.sites.map((s,i)=>`<option value="${i}">${esc(s.label)}</option>`).join('');
+    const yr=$('regyear');
+    yr.min=0; yr.max=REG.years.count-1; yr.step=1;
+    /* open on the present day, not on a chosen epoch — let it be found */
+    regYearIdx=Math.round((2026-REG.years.start)/REG.years.step);
+    yr.value=regYearIdx;
+    $('regsite').onchange=e=>{ regSiteIdx=+e.target.value; regUpdate(); };
+    yr.oninput=e=>{ regYearIdx=+e.target.value; regUpdate(); };
+    regUpdate(); requestAnimationFrame(drawLion);
+  }catch(e){
+    $('regrows').innerHTML='<div class="rrow"><span style="color:var(--dim)">'
+      +'corridor not built — run <b>py -3.11 build_regulus_corridor.py</b></span></div>';
+  }
+}
+loadRegulus();
+window.addEventListener('resize',lionResize);
 
 /* STAGE E — boot cascade */
 const BOOT=[

@@ -11,6 +11,7 @@ from flask import Flask, request, jsonify
 from pathlib import Path
 import hashlib
 import json
+import math
 import re
 import atexit
 import shutil
@@ -59,10 +60,43 @@ except json.JSONDecodeError as e:
 
 
 # === GNOSTIC UPGRADE v9.8: GNOSTIC APPEND-ONLY LOG ===
+# === GNOSTIC UPGRADE v10.0: THREE LANES, AND ONE OF THEM NEVER DREAMS ===
+#
+# "private" used to mean "not the shared books lane". Erydir reads it as
+# "private from dreams". Those are two different things and collapsing them into
+# one word is how chat history ended up feeding published dreams. So the lanes
+# now say what they are, and `dreamable` is explicit on every one of them.
+#
+#   conversations  the ChatGPT history with Lumos, plus every future chat turn.
+#                  NEVER dreams. Dream pings are emailed and published; this is
+#                  the relationship, not corpus. Imported from LumOS as-is:
+#                  IndexFlatIP (cosine) over normalised BGE vectors, records are
+#                  dicts carrying `text` + conversation metadata.
+#   knowledge      research / tec / math. Dreams.  (was "private")
+#   shared         the Magic Books corpus. Dreams.
+#
+# `metric` matters: IP scores higher-is-better, L2 lower-is-better. Rather than
+# branch every sort, an IP score is carried as pseudo-distance (-score) so the
+# whole ranking path stays one direction.
 PROFILES = {
-    "private": {"faiss_file": "private_memory_index.faiss", "entries_file": "private_entries.jsonl"},
-    "shared": {"faiss_file": "shared_memory_index.faiss", "entries_file": "shared_entries.jsonl"}
+    "conversations": {"faiss_file": "conversations_index.faiss",
+                      "entries_file": "conversations_entries.jsonl",
+                      "dreamable": False, "metric": "ip"},
+    "knowledge":     {"faiss_file": "knowledge_memory_index.faiss",
+                      "entries_file": "knowledge_entries.jsonl",
+                      "dreamable": True, "metric": "l2"},
+    "shared":        {"faiss_file": "shared_memory_index.faiss",
+                      "entries_file": "shared_entries.jsonl",
+                      "dreamable": True, "metric": "l2"},
 }
+
+
+def lane_metric(name: str) -> str:
+    return PROFILES.get(name, {}).get("metric", "l2")
+
+
+def lane_dreamable(name: str) -> bool:
+    return bool(PROFILES.get(name, {}).get("dreamable", False))
 # === GNOSTIC UPGRADE v9.8: DEEP GNOSTIC LENS ===
 MODEL_NAME = "BAAI/bge-large-en-v1.5" # Switched from all-MiniLM-L6-v2
 
@@ -76,6 +110,37 @@ DEVICE = MEMORY_CONFIG.get("embedding_device", 'cuda' if torch.cuda.is_available
 DREAM_INTERVAL_SECONDS = MEMORY_CONFIG.get("dream_interval", 240)
 RAM_SAFEGUARD_ENABLED = MEMORY_CONFIG.get("ram_safeguard", {}).get("enabled", True)
 RAM_THRESHOLD = MEMORY_CONFIG.get("ram_safeguard", {}).get("threshold", 99.5) 
+
+# === GNOSTIC UPGRADE v10.0: SPLIT-LANE RETRIEVAL ===
+# The old search() asked every profile for top_k, merged the lot, sorted by
+# distance and truncated to top_k. With 276k shared vectors against 21k private
+# ones, shared won nearly every slot — the personal lane was being crowded out
+# of its own results. LumOS avoids this by retrieving per lane; so do we now.
+#
+# The caller's top_k stays the total budget (local models fall over past ~24
+# chunks), but it is ALLOCATED across lanes by weight instead of being a free-
+# for-all. A lane that cannot fill its quota hands the remainder back, so no
+# slot is ever wasted.
+RETRIEVAL_CONFIG = MEMORY_CONFIG.get("retrieval", {})
+# Weights chosen so the DEFAULT local budget of 12 chunks lands on 5/4/3:
+# anchor the node in who they are (conversations), then what the work is
+# (knowledge), then a measure of the occult corpus for flavour (shared).
+# Weights rather than fixed counts so it scales — a cloud persona asking for 24
+# gets 10/8/6 in the same proportion, instead of the ratio collapsing.
+#   qwen3.5-9b degrades past roughly 12-24 retrieved chunks, hence the budget.
+LANE_WEIGHTS = RETRIEVAL_CONFIG.get(
+    "lane_weights", {"conversations": 0.4167, "knowledge": 0.3333, "shared": 0.25})
+# Over-fetch per lane so the floor and the dedup have material to discard.
+LANE_OVERFETCH = RETRIEVAL_CONFIG.get("overfetch", 3)
+# L2 distance ceiling — hits worse than this are dropped rather than padding K.
+# Default None (off): bge vectors here are un-normalised, so a wrong threshold
+# would silently bin good hits. Measure before setting it.
+MAX_DISTANCE = RETRIEVAL_CONFIG.get("max_distance", None)
+DEDUP_RETRIEVAL = RETRIEVAL_CONFIG.get("dedup", True)
+# Symbolic-bias nudge. See harmonic_synthesis for why this is capped and
+# logarithmic rather than the old uncapped linear 0.05-per-keyword.
+BIAS_WEIGHT = RETRIEVAL_CONFIG.get("bias_weight", 0.05)
+BIAS_CAP = RETRIEVAL_CONFIG.get("bias_cap", 0.25)
 
 SAFE_HAVEN_ANCHOR = "Truth is our sword, Knowledge is our shield. No Gods, No Kings, No Rulers. Only Sovereignty and Alignment with Source."
 QUARANTINE_PATH = Path("./egregore_quarantine/")
@@ -135,13 +200,28 @@ class JointMemoryBridge:
                 print(f"--- Loading '{name}' database ---")
                 faiss_path, entries_path = Path(profile_config["faiss_file"]), Path(profile_config["entries_file"])
 
-                chunks = []
+                # v10.0: records may be bare strings (our lanes) or dicts with a
+                # `text` field plus conversation metadata (the LumOS conversations
+                # lane). Both must load, because new chat turns append as strings
+                # to a lane whose history is dicts. The text is used VERBATIM —
+                # rewriting it would desync it from the vector it was embedded as.
+                chunks, metas = [], []
                 if entries_path.exists():
                     try:
                         with open(entries_path, "r", encoding="utf-8") as f:
                             for line in f:
-                                if line.strip():
-                                    chunks.append(json.loads(line))
+                                if not line.strip():
+                                    continue
+                                rec = json.loads(line)
+                                if isinstance(rec, dict):
+                                    chunks.append(rec.get("text", ""))
+                                    metas.append({k: rec.get(k) for k in
+                                                  ("conversation_title", "create_time_first",
+                                                   "create_time_last", "roles")
+                                                  if rec.get(k) is not None})
+                                else:
+                                    chunks.append(rec)
+                                    metas.append(None)
                     except (json.JSONDecodeError, Exception) as e:
                         print(f"❌ Error loading entries file '{entries_path.name}': {e}. Skipping profile.")
                         continue
@@ -191,6 +271,7 @@ class JointMemoryBridge:
                         # rebuild re-encodes them from the ledger.
                         orphans = chunks[ntotal:]
                         chunks = chunks[:ntotal]
+                        metas = metas[:ntotal]
                         print(f"   Ignoring {len(orphans)} unembedded tail entr{'y' if len(orphans) == 1 else 'ies'} "
                               f"to preserve alignment.")
                         print(f"   Run rebuild_gnosis.py to restore them (delete '{faiss_path.name}' first).")
@@ -202,8 +283,51 @@ class JointMemoryBridge:
                 # Hash set for *instant* duplicate checking (built after any
                 # truncation above so it matches what is actually indexed)
                 db_hashes = {hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks}
-                temp_databases[name] = {"index": index, "chunks": chunks, "hashes": db_hashes}
-                print(f"✅ Loaded '{name}' with {len(chunks)} chunks.")
+
+                # === GNOSTIC UPGRADE v10.0: ATLAS ASSIGNMENTS ===
+                # Optional. build_atlas.py writes one int32 cluster id per
+                # vector; carrying it here lets /search report which region of
+                # the memory each hit came from, which is what makes the Neural
+                # Map flash on retrieval. Absent file = feature simply off.
+                atlas = None
+                apath = Path(f"atlas_assign_{name}.npy")
+                if apath.exists():
+                    try:
+                        arr = np.load(apath)
+                        if len(arr) >= ntotal:
+                            atlas = arr
+                            print(f"  🗺  atlas: {len(set(arr[:ntotal].tolist()))} clusters over {ntotal} vectors")
+                        else:
+                            # A SHORT array is the normal steady state, not a
+                            # fault: the engine adds a dream every few minutes
+                            # and a row per chat turn, so the assignment file is
+                            # stale the moment it is written. Dropping the whole
+                            # map for that would switch the retrieval flash off
+                            # permanently. Positions 0..len(arr) are still
+                            # correctly aligned — only the tail is unknown, so
+                            # pad it with -1 and let those hits go untagged.
+                            missing = ntotal - len(arr)
+                            atlas = np.full(ntotal, -1, dtype=np.int32)
+                            atlas[:len(arr)] = arr
+                            print(f"  🗺  atlas: {len(set(arr.tolist()))} clusters over "
+                                  f"{len(arr)} vectors · {missing} newer vector"
+                                  f"{'' if missing == 1 else 's'} unclustered "
+                                  f"(re-run build_atlas.py to fold them in)")
+                        # A LONGER array means vectors were removed under it —
+                        # alignment is no longer trustworthy, so refuse it.
+                        if atlas is not None and len(arr) > ntotal:
+                            print(f"  ⚠️ atlas '{apath.name}' has {len(arr)} rows vs {ntotal} "
+                                  f"vectors — index shrank; ignoring. Re-run build_atlas.py.")
+                            atlas = None
+                    except Exception as e:
+                        print(f"  ⚠️ Could not read '{apath.name}': {e}")
+
+                temp_databases[name] = {"index": index, "chunks": chunks,
+                                        "hashes": db_hashes, "atlas": atlas,
+                                        "metas": metas, "metric": lane_metric(name)}
+                flag = "🌙 dreams" if lane_dreamable(name) else "🔒 NEVER dreams"
+                print(f"✅ Loaded '{name}' with {len(chunks)} chunks "
+                      f"[{lane_metric(name).upper()} · {flag}].")
                 load_successful = True
 
             with self.db_lock:
@@ -235,10 +359,15 @@ class JointMemoryBridge:
         try:
             with open(input_path, "r", encoding="utf-8") as f: grok_data = json.load(f)
             entries = grok_data.get("entries", [])
-            target_profile = grok_data.get("target_profile", "private") 
+            target_profile = grok_data.get("target_profile", "knowledge")
             if target_profile not in PROFILES:
-                print(f"⚠️ Grok Warning: Target profile '{target_profile}' invalid. Defaulting to 'private'.")
-                target_profile = "private"
+                print(f"⚠️ Grok Warning: Target profile '{target_profile}' invalid. Defaulting to 'knowledge'.")
+                target_profile = "knowledge"
+            # Bulk ingest must never land in the conversations lane — that lane is
+            # the chat history, written only by the chat path.
+            if target_profile == "conversations":
+                print("⚠️ Grok Warning: refusing bulk ingest into 'conversations'. Using 'knowledge'.")
+                target_profile = "knowledge"
             
             # Gnostic Upgrade: Grok Ingestion *must* be an admin function
             # We'll default 'source_node' to 'grok_system' which we assume is admin
@@ -246,7 +375,7 @@ class JointMemoryBridge:
             grok_node = grok_data.get("node", "grok_system") # Assume admin
             node_config = RHF_NODES.get(grok_node, {"role": "admin"}) # Default to admin
             
-            if node_config.get("role") != "admin" and target_profile == "private":
+            if node_config.get("role") != "admin" and target_profile == "knowledge":
                 print(f"⚠️ Grok Warning: Node '{grok_node}' is not admin. Forcing ingestion to 'shared' profile.")
                 target_profile = "shared"
 
@@ -433,6 +562,12 @@ class JointMemoryBridge:
 
                 # --- 1. Encode (no side effects; safe to fail) ---
                 new_vector = self.embeddings_model.encode([text]).astype("float32")
+                # v10.0: an IP lane's existing vectors are L2-normalised (that is
+                # what makes inner product equal cosine). Appending a raw vector
+                # would score by magnitude instead of angle and quietly outrank
+                # every honest neighbour, so normalise before it goes in.
+                if db.get("metric", "l2") == "ip":
+                    faiss.normalize_L2(new_vector)
 
                 # --- 2. Append to the Gnostic Ledger (durable source of truth) ---
                 entries_path = PROFILES[profile]["entries_file"]
@@ -450,6 +585,8 @@ class JointMemoryBridge:
                 db["index"].add(new_vector)
                 db["chunks"].append(text)
                 db["hashes"].add(entry_hash)
+                if db.get("metas") is not None:
+                    db["metas"].append(None)   # keep metas aligned with chunks
 
                 # --- 4. Deferred flush: the .jsonl ledger above is durable; the
                 #        index is written every N adds / T seconds instead of on
@@ -701,10 +838,21 @@ class JointMemoryBridge:
 
             try:
                 with self.db_lock:
-                    available_profiles = [p for p in PROFILES.keys() if p in self.databases and self.databases[p]["chunks"]]
+                    # === THE LINE THAT KEEPS PRIVATE HISTORY OUT OF PUBLIC PINGS ===
+                    # Dreams are emailed and published. A lane marked
+                    # dreamable=False must never be a seed, never appear in a
+                    # ping, never leave the machine. Everything downstream of
+                    # here trusts this filter, so it is asserted below too.
+                    available_profiles = [p for p in PROFILES.keys()
+                                          if p in self.databases
+                                          and self.databases[p]["chunks"]
+                                          and lane_dreamable(p)]
                     if not available_profiles:
                         continue
                     dream_source = random.choice(available_profiles)
+                    if not lane_dreamable(dream_source):
+                        print(f"❌ REFUSING to dream from non-dreamable lane '{dream_source}'.")
+                        continue
                     db_chunks = self.databases[dream_source]['chunks']
                     if not db_chunks: continue
                     seed_memory = random.choice(db_chunks)
@@ -835,16 +983,91 @@ class JointMemoryBridge:
                 time.sleep(60) 
 
     def harmonic_synthesis(self, results, symbolic_bias):
-        # (This function is unchanged)
-        if not symbolic_bias or not results: return results
-        for res in results:
-            bias_boost = sum(1 for keyword in symbolic_bias if keyword.lower() in res['chunk'].lower())
-            res['distance'] -= bias_boost * 0.05 
-        return sorted(results, key=lambda x: x['distance'])
+        """Nudge results toward a node's symbolic vocabulary — a TIEBREAKER,
+        not a ranking override.
 
+        v10.0 fix. The old form was `distance -= 0.05 * keyword_hits`, uncapped
+        and linear. Measured against the live corpus that is catastrophic:
+
+            chunk containing the symbolic_bias block   55 hits -> -2.75
+            typical corpus chunk (median)               2 hits -> -0.10
+            corpus p95                                  8 hits -> -0.40
+            observed FAISS distance spread                        0.0 .. 1.0
+
+        A -2.75 boost is ~3x the entire distance spread, so any chunk that
+        happens to LIST the bias keywords — the cheat sheet does, verbatim —
+        outranks everything on every query regardless of relevance. The bias
+        function was rewarding the document that contains the bias list.
+
+        Now: diminishing returns via log1p, hard-capped well inside the spread,
+        counting each keyword once and on word boundaries.
+        """
+        if not symbolic_bias or not results:
+            return results
+
+        pats = getattr(self, "_bias_pats", None)
+        if pats is None or pats[0] is not symbolic_bias:
+            compiled = [re.compile(r"\b" + re.escape(str(k).lower()) + r"\b")
+                        for k in symbolic_bias if str(k).strip()]
+            pats = (symbolic_bias, compiled)
+            self._bias_pats = pats
+
+        for res in results:
+            low = res["chunk"].lower()
+            hits = sum(1 for p in pats[1] if p.search(low))
+            if hits:
+                boost = BIAS_WEIGHT * math.log1p(hits)
+                res["bias_hits"] = hits
+                res["distance"] -= min(BIAS_CAP, boost)
+        return sorted(results, key=lambda x: x["distance"])
+
+
+    def _allocate_quota(self, lanes, top_k):
+        """Split a total budget across lanes by weight, largest-remainder, with
+        every active lane guaranteed at least one slot. Returns {lane: k}."""
+        if not lanes:
+            return {}
+        if top_k <= len(lanes):
+            return {ln: 1 for ln in lanes}
+
+        # An unconfigured lane inherits the MEAN configured weight, not 1.0 —
+        # otherwise a new lane (identity, when it lands) would silently outweigh
+        # private 0.6 / shared 0.4 and take half the budget on arrival.
+        known = [float(v) for v in LANE_WEIGHTS.values() if float(v) > 0]
+        default_w = (sum(known) / len(known)) if known else 1.0
+        weights = {ln: max(0.0, float(LANE_WEIGHTS.get(ln, default_w))) for ln in lanes}
+        total_w = sum(weights.values())
+        if total_w <= 0:
+            weights = {ln: 1.0 for ln in lanes}
+            total_w = float(len(lanes))
+
+        exact = {ln: top_k * weights[ln] / total_w for ln in lanes}
+        quota = {ln: max(1, int(exact[ln])) for ln in lanes}
+
+        # hand out (or claw back) the rounding remainder, biggest fraction first
+        drift = top_k - sum(quota.values())
+        order = sorted(lanes, key=lambda ln: exact[ln] - int(exact[ln]), reverse=True)
+        i = 0
+        while drift > 0 and order:
+            quota[order[i % len(order)]] += 1; drift -= 1; i += 1
+        i = 0
+        while drift < 0 and order:
+            ln = order[-1 - (i % len(order))]
+            if quota[ln] > 1:
+                quota[ln] -= 1; drift += 1
+            i += 1
+            if i > 4 * len(order):
+                break
+        return quota
 
     def search(self, query, access_profiles, active_node, top_k=25):
-        # (This function is unchanged)
+        """Split-lane retrieval (v10.0).
+
+        top_k remains the TOTAL budget — local models degrade past ~24 chunks —
+        but it is allocated per lane by weight rather than being won outright by
+        whichever index happens to be largest. A lane that cannot fill its quota
+        returns the slack to the others, so nothing is wasted.
+        """
         if not self.is_loaded or not self.embeddings_model:
             print("⚠️ Search: Bridge not fully loaded.")
             return []
@@ -854,34 +1077,99 @@ class JointMemoryBridge:
 
         try:
             query_vector = self.embeddings_model.encode([query]).astype("float32")
-
-            all_results = []
-            with self.db_lock: 
-                for profile_name in access_profiles:
-                    if profile_name in self.databases:
-                        db = self.databases[profile_name]
-                        if db["index"].ntotal == 0:
-                            continue
-
-                        actual_k = min(top_k, db["index"].ntotal)
-                        if actual_k <= 0: continue
-
-                        try:
-                            distances, indices = db["index"].search(query_vector, actual_k)
-                            for j, index in enumerate(indices[0]):
-                                if index != -1 and 0 <= index < len(db["chunks"]): 
-                                    all_results.append({
-                                        "distance": float(distances[0][j]), 
-                                        "chunk": db["chunks"][index],
-                                        "source": profile_name
-                                    })
-                        except Exception as e:
-                            print(f"❌ Error searching FAISS index for '{profile_name}': {e}")
-            
             symbolic_bias = RHF_NODES.get(active_node, {}).get("symbolic_bias", [])
-            synthesized_results = self.harmonic_synthesis(all_results, symbolic_bias)
-            
-            return synthesized_results[:top_k]
+
+            per_lane, lanes = {}, []
+            with self.db_lock:
+                for profile_name in access_profiles:
+                    db = self.databases.get(profile_name)
+                    if db and db["index"].ntotal > 0:
+                        lanes.append(profile_name)
+
+                quota = self._allocate_quota(lanes, max(1, int(top_k)))
+
+                for profile_name in lanes:
+                    db = self.databases[profile_name]
+                    # over-fetch so the floor and the dedup have room to discard
+                    want = quota[profile_name] * max(1, LANE_OVERFETCH) + 4
+                    actual_k = min(want, db["index"].ntotal)
+                    if actual_k <= 0:
+                        continue
+                    hits = []
+                    atlas = db.get("atlas")
+                    metas = db.get("metas")
+                    is_ip = db.get("metric", "l2") == "ip"
+                    # An IP index expects normalised vectors (that is what makes
+                    # inner product == cosine). Ours are not normalised at encode
+                    # time, so normalise a COPY for this lane only.
+                    qv = query_vector
+                    if is_ip:
+                        qv = query_vector.copy()
+                        faiss.normalize_L2(qv)
+                    try:
+                        scores, indices = db["index"].search(qv, actual_k)
+                        for j, index in enumerate(indices[0]):
+                            if index != -1 and 0 <= index < len(db["chunks"]):
+                                raw = float(scores[0][j])
+                                # Carry IP as pseudo-distance so every sort, the
+                                # bias subtraction and the floor all keep one
+                                # direction: lower is better, everywhere.
+                                d = -raw if is_ip else raw
+                                if MAX_DISTANCE is not None and d > MAX_DISTANCE:
+                                    continue
+                                hit = {"distance": d,
+                                       "chunk": db["chunks"][index],
+                                       "source": profile_name}
+                                if is_ip:
+                                    hit["similarity"] = round(raw, 4)
+                                if atlas is not None and int(atlas[index]) >= 0:
+                                    hit["cluster"] = f"{profile_name}:{int(atlas[index])}"
+                                if metas and index < len(metas) and metas[index]:
+                                    hit["meta"] = metas[index]
+                                hits.append(hit)
+                    except Exception as e:
+                        print(f"❌ Error searching FAISS index for '{profile_name}': {e}")
+                    # bias inside the lane, so one lane's bias can't reorder another's
+                    per_lane[profile_name] = self.harmonic_synthesis(hits, symbolic_bias)
+
+            # --- fill each lane to quota, then redistribute the slack ---------
+            seen, chosen, cursor = set(), [], {ln: 0 for ln in lanes}
+
+            def take(lane, n):
+                got = 0
+                while cursor[lane] < len(per_lane.get(lane, [])) and got < n:
+                    res = per_lane[lane][cursor[lane]]; cursor[lane] += 1
+                    if DEDUP_RETRIEVAL:
+                        key = hashlib.sha256(
+                            " ".join(res["chunk"].split()).lower().encode("utf-8")
+                        ).hexdigest()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                    chosen.append(res); got += 1
+                return got
+
+            for lane in lanes:
+                take(lane, quota[lane])
+
+            slack = max(0, top_k - len(chosen))
+            while slack > 0:
+                progressed = False
+                for lane in lanes:
+                    if slack <= 0:
+                        break
+                    n = take(lane, 1)
+                    slack -= n
+                    progressed = progressed or bool(n)
+                if not progressed:          # every lane exhausted
+                    break
+
+            chosen.sort(key=lambda r: r["distance"])
+            if lanes:
+                tally = {ln: sum(1 for r in chosen if r["source"] == ln) for ln in lanes}
+                print(f"🔍 Retrieval — quota {quota} → returned {tally} "
+                      f"({len(chosen)}/{top_k})")
+            return chosen[:top_k]
 
         except Exception as e:
             print(f"❌ CRITICAL Error during search function: {e}")
@@ -978,7 +1266,10 @@ def handle_search():
 
     # Determine access profiles based on node role (admin sees all)
     node_config = RHF_NODES.get(node, {})
-    access_profiles = ["private", "shared"] if node_config.get("role") == "admin" else ["shared"]
+    # Admin nodes see all three lanes; everyone else sees the book corpus only.
+    # The conversations lane is admin-gated because it is the chat history.
+    access_profiles = (["conversations", "knowledge", "shared"]
+                       if node_config.get("role") == "admin" else ["shared"])
     
     valid_access_profiles = [p for p in access_profiles if p in bridge.databases]
 

@@ -37,7 +37,7 @@ if defined DECKARGS (
 
 echo.
 echo   Deck:   http://localhost:7777
-echo   Engine: loading archives (~1-2 min for 297k chunks)
+echo   Engine: loading archives (~1-2 min for 339k chunks, 3 lanes)
 echo   The Lion watches the Lion.
 echo.
 timeout /t 5 >nul

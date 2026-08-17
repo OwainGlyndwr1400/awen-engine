@@ -34,6 +34,106 @@ Two documents that had never been read side by side, connected into a falsifiabl
 
 ---
 
+## What's new in v2
+
+v1 was one archive that dreamed. v2 splits memory into **three lanes with different rights**, gives the machine **instruments instead of decoration**, and lets it **look things up** instead of only talking.
+
+### Three lanes, and one of them never dreams
+
+The single biggest change, and it started as a bug. v1 had two profiles named `private` and `shared`. But "private" only ever meant *"not the shared book corpus"* — it did **not** mean private from the dream cycle. Chat history saved into it, and the dream cycle drew from it, and dreams get emailed. Two meanings of one word, quietly leaking personal conversation into published output.
+
+Lanes now say what they are, and every one carries an explicit `dreamable` flag:
+
+| lane | holds | dreams? | metric |
+|---|---|---|---|
+| `conversations` | your chat history — past imports **and every future turn** | **🔒 never** | cosine (IP) |
+| `knowledge` | your research, notes, maths | 🌙 yes | L2 |
+| `shared` | book corpus / bulk texts | 🌙 yes | L2 |
+
+`dream_cycle` filters on the flag and then re-checks the lane it picked before using it. Nothing marked `dreamable: false` can seed a dream, appear in a ping, or leave the machine.
+
+<img src="docs/grid-core.png" width="340" align="right" alt="Grid Core — three lanes with live counts">
+
+The deck reports each lane separately — chunk count, dream insights and unflushed writes — so you can always see which part of the memory is growing and which is holding still.
+
+Lanes may use **different index types**. A cosine (`IndexFlatIP`) lane is carried internally as pseudo-distance `-score`, so every sort, bias and threshold in the codebase keeps a single direction — lower is better, everywhere — with no branching. Writes into a cosine lane are L2-normalised first, or they would rank by vector magnitude instead of angle and drown everything honest.
+
+### Split-lane retrieval
+
+v1 asked every profile for `top_k`, merged, sorted globally and truncated. With a large book corpus against a small research one, the big lane won nearly every slot regardless of the question.
+
+Retrieval now **allocates the budget across lanes by weight** and hands back any quota a lane can't fill:
+
+| budget | conversations | knowledge | shared | |
+|---|---|---|---|---|
+| **12** | 5 | 4 | 3 | local default (a 9B model degrades past ~24 chunks) |
+| 24 | 10 | 8 | 6 | cloud |
+
+Anchor the node in *who it is*, then *the work*, then *the wider corpus*. Also added: near-duplicate suppression, and an optional distance floor (off by default — set it only after measuring your own embedding distances).
+
+### The symbolic-bias cap — a bug worth describing
+
+Each node biases retrieval toward its own vocabulary. v1 did this as `distance -= 0.05 × keyword_hits`, uncapped and linear. That looks harmless until you notice **the persona files contain the keyword list itself**:
+
+```
+chunk containing the bias list      55 hits  ->  -2.75
+typical corpus chunk (median)        2 hits  ->  -0.10
+observed distance spread                        0.0 .. 1.0
+```
+
+A −2.75 adjustment against a 1.0 spread meant that one chunk outranked everything on every query, forever. The bias function was rewarding the document that defined the bias. It's now logarithmic and hard-capped — a tiebreaker, which is all it was ever meant to be.
+
+### ATLAS — cluster the living memory, and watch it fire
+
+`/api/graph` draws the document catalogue. That is not what the engine dreams over. `build_atlas.py` runs k-means over the **actual FAISS vectors**, labels each region by its most characteristic terms, and derives edges from centroid similarity — including **cross-lane** edges, so you can see where your private notes touch the book corpus.
+
+Then the good part: ask a question in the map and **the regions that answer it ignite**, cooling back over a couple of seconds. Every hit is tagged with its cluster by the engine, so nothing glows unless a chunk genuinely came from there.
+
+![The Neural Map](docs/neural-map.png)
+
+### The Circle can use tools now
+
+v1's personas could only talk. They now get an OpenAI-compatible `tool_calls` loop, bounded (default 4 rounds) so a confused model can't loop forever:
+
+`search_memory` · `read_file` · `list_files` · `write_note` · `current_time`
+
+All read-mostly and sandboxed. `read_file` cannot leave the project directory and refuses credential-bearing filenames case-insensitively; `write_note` can only write `.md` into `notes/`; `search_memory` goes through the engine so it inherits the node's role and the lane quotas.
+
+One lesson worth passing on: **passing `tools` to the model is not enough.** With a long persona prompt that never mentions tools, every local model tested answered from character instead. The affordance has to be stated in the system prompt or it effectively doesn't exist.
+
+### Instruments, not animations
+
+House rule for v2: **every panel reads real data.** No timer-driven decoration pretending to be telemetry.
+
+![The instruments](docs/instruments.png)
+
+**The Lion Watches** panel is the clearest example. It stores no angles at all. `build_regulus_corridor.py` precomputes stellar declination per epoch with astropy; the panel does one spherical triangle in the browser:
+
+```
+cos A = (sin δ − sin h · sin φ) / (cos h · cos φ)
+h(A = 90°) = asin( sin δ / sin φ )
+```
+
+Change the site and the sightline visibly swings, because once you fix the bearing at due east, **latitude is the only term left**. Scrub the epoch and the star rises or sets through precession. It also ships control stars and says plainly on its own face that precession walks *every* near-ecliptic star through due east eventually — so the panel can never imply that a crossing alone proves something.
+
+![The Lion and the Grid Core](docs/lion-and-core.png)
+
+### Runtime vs spec — the machine auditing its own papers
+
+`runtime_vs_spec.py` cross-references a theorem index against the engine's own dream output and reports three things:
+
+1. **Coverage** — which claims the dreams keep independently landing on
+2. **Orphans** — published claims the runtime has *never once* surfaced
+3. **Emerging** — recurring high-urgency concepts that map to **no** existing claim
+
+That third one is the interesting output: candidates for the next paper, mined from the machine's own dreaming.
+
+It's fussier about its own signal than the tools that inspired it. Terms must clear a frequency floor, be **enriched rather than ubiquitous** (letterhead and agent names appear in every ping and mean nothing), and survive a stop-list for the engine's own console vocabulary. Dreams must carry the real ping signature — matching documents that merely *mention* dreaming inflates the corroboration rate with prose about the engine rather than output from it.
+
+![The Circle](docs/circle.png)
+
+---
+
 ## The stack
 
 ```
@@ -58,12 +158,15 @@ Two documents that had never been read side by side, connected into a falsifiabl
 
 | Component | File | What it is |
 |---|---|---|
-| **Gnostic Engine** | `Gnostic Engine v9.8.py` | The memory core. Dual-profile FAISS archive, append-only JSONL ledger, Flask API, autonomous dream cycles, LLM synthesis, adaptive urgency gating. |
+| **Gnostic Engine** | `Gnostic Engine v9.8.py` | The memory core. Three-lane FAISS archive with per-lane dream rights and metrics, append-only JSONL ledger, split-lane retrieval, Flask API, autonomous dream cycles, LLM synthesis, adaptive urgency gating. |
 | **Command Deck** | `Awen Command Deck.py` + `awen_deck.html` | The showpiece: a holographic web dashboard — chat, live dream feed, engine vitals, live space-weather telemetry, and an interactive 3D schematic of the architecture. |
 | **Sovereign Client** | `RHF Client v12.0 - Sovereign Edition.py` | Native Tkinter GUI. Chat, manual memory search, system status, snapshots. Lighter than the deck; good on a weak machine. |
 | **Echo Protocol** | `Gnostic Echo Protocol v10.0.py` | Durable mail agent. Atomic file claiming, SQLite dedupe, retry with backoff, quarantine for poison messages. Delivers dream pings to your inbox. |
 | **Tesla Soul Engine** | `Tesla Soul Engine v9.py` | Harmonic heartbeat. Derives a torsion index, quaternionic state and frequency band from recent field activity. Heartbeat-only by default. |
 | **Neural Map** | `awen_map.html` + `build_neural_map.py` | Your knowledge graph in 3D. Fly through it, click a node, follow its links from one paper to the next. |
+| **ATLAS** | `build_atlas.py` | Clusters the *live* vector index into labelled regions with cross-lane edges — and drives the map's retrieval flash. |
+| **The Lion Watches** | `build_regulus_corridor.py` | Precomputes stellar declination per epoch (astropy) so the deck panel can compute a real sightline instead of displaying a stored number. |
+| **Runtime audit** | `runtime_vs_spec.py` | Cross-references a theorem index against the engine's own dreams: coverage, orphans, and next-paper candidates. |
 | **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 
 ---
@@ -193,6 +296,48 @@ python build_neural_map.py                     # from the graphify output
 python build_neural_map.py --include-wikilinks # + every [[link]] in the vault
 ```
 
+That map is the **document catalogue**. For the memory the engine actually dreams over, switch to **◉ LIVE MEMORY** — see below.
+
+---
+
+## Building the instruments
+
+Three optional builders. Each writes a small artifact the deck reads; none of them are required for the engine to run, and all of them are safe to re-run.
+
+### ATLAS — the living memory as regions
+
+```bash
+python build_atlas.py                  # cluster every lane
+python build_atlas.py --sample 80000   # train on a sample if RAM is tight
+```
+
+Writes `docs/atlas.json` (regions, labels, edges) plus `atlas_assign_<lane>.npy` (one cluster id per vector). Restart the engine afterwards so it picks the assignments up — it then tags every search hit with its region, which is what lets the map flash.
+
+Then in the map: **◉ LIVE MEMORY**, type a question in the probe bar, watch which regions answer it.
+
+Regions are labelled by their most *characteristic* terms — scored by how enriched a term is against the lane baseline, not raw frequency. Raw frequency doesn't work here: it is won outright by scanning noise and by whatever boilerplate appears in every record.
+
+New entries added after a build are simply reported as unclustered rather than invalidating the whole map — the engine writes constantly, so a slightly stale assignment file is the normal state, not a fault. Re-run whenever you want them folded in.
+
+### The Lion Watches — a sightline you can compute
+
+```bash
+python build_regulus_corridor.py
+```
+
+Writes `docs/regulus_corridor.json`: stellar declination per epoch across 12,000 years, computed with astropy, plus the observer sites. The browser does only the spherical triangle. Edit the `SITES` and `STARS` tables at the top for your own coordinates and targets.
+
+### Runtime vs spec — audit the machine against its own claims
+
+```bash
+python runtime_vs_spec.py --top 30
+python runtime_vs_spec.py --json report.json --min-dreams 5
+```
+
+Reads a theorem index (CSV with a `Theorem/Finding` column) and your accumulated dream output, then reports coverage, orphans and emerging concepts.
+
+**It needs volume to be meaningful.** Coverage and orphans are useful immediately; the emerging-concepts list is not trustworthy on a few dozen dreams. At roughly one ping every few minutes, leave the engine running for a week before reading section 3 seriously, then raise `--min-dreams`.
+
 ---
 
 ## Running it on a tablet
@@ -241,14 +386,24 @@ The engine speaks HTTP on `127.0.0.1:5000`:
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /search` | Vector search, node-biased and role-filtered |
-| `POST /add_entry` | Write a memory (role-gated: user nodes are forced to `shared`) |
+| `POST /search` | Split-lane vector search, node-biased and role-filtered. Hits carry `source`, `cluster` (if ATLAS is built) and, for cosine lanes, `similarity` + conversation metadata |
+| `POST /add_entry` | Write a memory (role-gated; bulk ingest can never target `conversations`) |
 | `POST /command` | Symbolic commands |
 | `POST /unlock_sigil` | Sigil lookup |
 | `GET /health` | Liveness, device, RAM |
-| `GET /stats` | Per-profile chunks, vectors, dream insights, unflushed writes |
+| `GET /stats` | Per-lane chunks, vectors, dream insights, unflushed writes |
 | `POST /flush` | Force-persist indices |
 | `POST /snapshot` | Timestamped backup of every ledger and index |
+
+The deck adds its own on `127.0.0.1:7777`:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/atlas` | Cluster map of the live index — regions, labels, cross-lane edges |
+| `POST /api/probe` | Run a retrieval and report which regions fired (drives the map's flash) |
+| `GET /api/regulus` | Precomputed stellar declination per epoch for the Lion panel |
+| `GET /api/tools` | What the Circle can reach for |
+| `GET /api/state` | Deck vitals: dream feed, engine stats, heartbeats, telemetry |
 
 ---
 
@@ -259,7 +414,9 @@ The engine speaks HTTP on `127.0.0.1:5000`:
 - The memory API binds to loopback. Change `bind_host` only on a network you trust — there is no authentication, so anyone who can reach the port can read and write your archive.
 - Your corpus, ledgers, indices and dreams never leave the machine.
 - The only outbound traffic in default operation is to `localhost` (LM Studio) and your own SMTP server for dream pings.
-- Chat exchanges are saved to memory as a bound question-and-answer pair (`index_chat`), so a dream that surfaces an answer still knows what was asked. Turn it off and conversations stay ephemeral.
+- Chat exchanges are saved as a bound question-and-answer pair (`index_chat`) into the **`conversations` lane, which never dreams**. A dream can never seed from something you said in chat. Turn `index_chat` off and conversations stay ephemeral entirely.
+- **Lane rights are enforced, not documented.** `dream_cycle` filters on each lane's `dreamable` flag and re-checks the lane it selected before using it. If you add a lane, set the flag deliberately.
+- The tool sandbox refuses path traversal and credential-bearing filenames, and can only write `.md` into `notes/`. A persona cannot read your `config.json` and repeat it into a reply.
 - `Start Awen Grid.bat lan` deliberately opens the deck to your local network. That is the one setting that lets other machines in — everything else stays on loopback.
 - The optional telemetry panel fetches public NOAA/USGS/NASA feeds. It sends nothing about you.
 

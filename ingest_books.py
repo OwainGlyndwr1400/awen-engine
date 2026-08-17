@@ -29,7 +29,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Harvest .txt books into a Gnostic entries .jsonl")
     ap.add_argument("--source", required=True,
                     help="folder of .txt books to harvest")
-    ap.add_argument("--profile", choices=["private", "shared"], default="shared")
+    ap.add_argument("--profile", choices=["knowledge", "shared"], default="shared")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -37,7 +37,7 @@ def main() -> int:
     out_path = Path(f"{args.profile}_entries.jsonl")
 
     # Cross-profile dedupe baseline
-    other = Path("private_entries.jsonl" if args.profile == "shared" else "shared_entries.jsonl")
+    other = Path("knowledge_entries.jsonl" if args.profile == "shared" else "shared_entries.jsonl")
     seen: set[str] = set()
     if other.exists():
         with open(other, encoding="utf-8") as f:

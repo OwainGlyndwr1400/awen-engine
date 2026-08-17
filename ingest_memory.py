@@ -1,7 +1,7 @@
 # --- ingest_memory.py (v1.0 - The Gnostic Harvest) ---
 # Builds a clean entries .jsonl for the Gnostic Engine from the Memory/ vault.
 #
-#   py -3.11 ingest_memory.py                 -> writes private_entries.jsonl
+#   py -3.11 ingest_memory.py                 -> writes knowledge_entries.jsonl
 #   py -3.11 ingest_memory.py --dry-run       -> stats only, writes nothing
 #   py -3.11 ingest_memory.py --profile shared
 #   py -3.11 ingest_memory.py --include-codex --include-dream-pings
@@ -181,7 +181,7 @@ def collect_files(include_codex: bool, include_dream_pings: bool) -> list[Path]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Harvest Memory/ into a Gnostic entries .jsonl")
-    ap.add_argument("--profile", choices=["private", "shared"], default="private")
+    ap.add_argument("--profile", choices=["knowledge", "shared"], default="knowledge")
     ap.add_argument("--include-codex", action="store_true",
                     help="Also ingest notebooklm_dream_codex3 (old dream archive, garble-prone)")
     ap.add_argument("--include-dream-pings", action="store_true",

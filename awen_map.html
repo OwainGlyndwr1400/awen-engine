@@ -57,6 +57,17 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:50;
 #crosshair::after{top:6px;left:0;height:2px;width:14px}
 body.fly #crosshair{display:block}
 
+/* the retrieval probe — only meaningful in LIVE MEMORY mode */
+#probebar{position:fixed;top:62px;left:12px;z-index:20;display:none;align-items:center;gap:10px;
+  background:var(--panel);border:1px solid var(--edge);border-radius:8px;backdrop-filter:blur(6px);
+  padding:8px 12px}
+body.atlas #probebar{display:flex}
+#probe{background:#0a1c2c;border:1px solid var(--edge);border-radius:5px;color:var(--soft);
+  font-family:var(--mono);font-size:12px;padding:7px 10px;width:340px;outline:none}
+#probe:focus{border-color:rgba(46,245,200,.7)}
+#probestat{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.08em;min-width:150px}
+#probestat b{color:var(--gold);font-weight:400}
+
 /* tablets / phones: stack the chrome, drop fly mode, fatten touch targets */
 @media (max-width:900px), (pointer:coarse){
   #top{height:auto;flex-wrap:wrap;padding:8px 10px;gap:8px}
@@ -67,6 +78,8 @@ body.fly #crosshair{display:block}
   #info{top:auto;bottom:0;right:0;left:0;width:100%;max-height:46vh;border-radius:10px 10px 0 0}
   .link{padding:11px 10px;font-size:12.5px}
   #hint{display:none}
+  #probebar{position:static;width:100%;order:4;padding:0;border:0;background:none;flex-wrap:wrap}
+  #probe{width:100%;font-size:16px;padding:9px 10px}
 }
 </style>
 </head>
@@ -77,10 +90,16 @@ body.fly #crosshair{display:block}
 <div id="top">
   <div class="title">NEURAL MAP <small>// awen grid</small></div>
   <input id="search" placeholder="search the web…  (Enter = jump to best match)">
+  <button class="btn" id="atlasbtn" title="switch between the document catalogue and the living FAISS memory">◉ LIVE MEMORY</button>
   <button class="btn" id="flybtn" title="WASD to move, mouse to look, Esc to exit">FLY MODE</button>
   <button class="btn" id="resetbtn">RESET VIEW</button>
   <a class="btn" href="/" style="text-decoration:none">← DECK</a>
   <div id="counts"></div>
+</div>
+
+<div id="probebar">
+  <input id="probe" placeholder="ask the memory a question — watch which regions fire…">
+  <span id="probestat"></span>
 </div>
 
 <div id="info">
@@ -162,6 +181,137 @@ const ring = new THREE.Mesh(new THREE.TorusGeometry(1, .045, 8, 48),
   new THREE.MeshBasicMaterial({ color:0x2ef5c8 }));
 ring.visible = false; scene.add(ring);
 $('load').style.display = 'none';
+
+/* ══ ATLAS — the LIVING memory ══════════════════════════════════════
+   /api/graph is the graphify document catalogue: papers and concepts.
+   /api/atlas is what the engine actually dreams over — k-means clusters of the
+   297k-vector FAISS index. Two different objects, so two layers, one toggle.
+
+   The flash is the point. Ask a question in probe, the engine retrieves, every
+   hit comes back tagged with its cluster id, and those clusters ignite. You are
+   watching which regions of the memory answer a question.                    */
+let ATLAS = null, atlasMode = false, aMesh = null, aEdges = null, aGlow = [];
+const aBase = [], aPos = [];
+
+try {
+  const res = await fetch('/api/atlas');
+  if (res.ok) ATLAS = await res.json();
+} catch (e) { /* atlas optional — map works without it */ }
+
+if (ATLAS && ATLAS.clusters?.length) {
+  const CL = ATLAS.clusters, byId = new Map(CL.map((c,i) => [c.id, i]));
+  const SPREAD = 21;
+  const maxSize = Math.max(...CL.map(c => c.size));
+
+  const ag = new THREE.IcosahedronGeometry(1, 3);
+  const am = new THREE.MeshStandardMaterial({ roughness:.3, metalness:.15,
+    emissive:0x000000, emissiveIntensity:1.0 });
+  aMesh = new THREE.InstancedMesh(ag, am, CL.length);
+  const mm = new THREE.Matrix4();
+  CL.forEach((c,i) => {
+    // size by sqrt(chunk count) so a 8,846-chunk cluster does not swallow the view
+    c.r = 0.34 + 1.5 * Math.sqrt(c.size / maxSize);
+    const p = [c.pos[0]*SPREAD, c.pos[1]*SPREAD, c.pos[2]*SPREAD];
+    aPos.push(p);
+    mm.makeScale(c.r,c.r,c.r).setPosition(...p);
+    aMesh.setMatrixAt(i, mm);
+    const col = new THREE.Color(c.colour || '#39e6ff');
+    aBase.push(col.clone());
+    aMesh.setColorAt(i, col);
+    aGlow.push(0);
+  });
+  aMesh.instanceMatrix.needsUpdate = true;
+  aMesh.visible = false;
+  scene.add(aMesh);
+
+  const ep = new Float32Array(ATLAS.edges.length*6);
+  ATLAS.edges.forEach((e,i) => {
+    const a = byId.get(e.a), b = byId.get(e.b);
+    if (a == null || b == null) return;
+    ep.set(aPos[a], i*6); ep.set(aPos[b], i*6+3);
+  });
+  const aeg = new THREE.BufferGeometry();
+  aeg.setAttribute('position', new THREE.BufferAttribute(ep,3));
+  aEdges = new THREE.LineSegments(aeg,
+    new THREE.LineBasicMaterial({ color:0x2ef5c8, transparent:true, opacity:.10 }));
+  aEdges.visible = false;
+  scene.add(aEdges);
+
+  /* ── the flash ── */
+  function ignite(clusterIds){
+    clusterIds.forEach(cid => {
+      const i = byId.get(cid.cluster ?? cid);
+      if (i != null) aGlow[i] = 1;
+    });
+  }
+
+  $('probe').addEventListener('keydown', async e => {
+    if (e.key !== 'Enter') return;
+    const q = $('probe').value.trim();
+    if (!q) return;
+    $('probestat').textContent = 'retrieving…';
+    try {
+      const r = await fetch('/api/probe', { method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ query:q, top_k:14 }) });
+      const d = await r.json();
+      if (d.error) { $('probestat').textContent = d.error; return; }
+      ignite(d.clusters);
+      const lanes = {};
+      d.clusters.forEach(c => { lanes[c.lane] = (lanes[c.lane]||0) + c.hits; });
+      $('probestat').innerHTML = `<b>${d.clusters.length}</b> regions fired · ` +
+        Object.entries(lanes).map(([k,v]) => `${k} ${v}`).join(' · ');
+      // open the strongest region so you can read what actually answered
+      const best = d.clusters[0];
+      if (best){ const i = byId.get(best.cluster); if (i != null) selectCluster(i, true); }
+    } catch (err) { $('probestat').textContent = 'probe failed'; }
+  });
+
+  function selectCluster(i, moveCamera=false){
+    const c = CL[i];
+    $('i-label').textContent = c.label || c.id;
+    $('i-meta').textContent = `${c.lane} lane · ${c.size.toLocaleString()} chunks · cluster ${c.k}`;
+    $('i-src').textContent = c.terms?.length ? '⌘ ' + c.terms.join('  ·  ') : '⌘ (diffuse — no distinctive terms)';
+    const nb = (ATLAS.edges || [])
+      .filter(e => e.a === c.id || e.b === c.id)
+      .map(e => ({ id: e.a === c.id ? e.b : e.a, w: e.w, cross: e.cross }))
+      .sort((x,y) => y.w - x.w);
+    $('links').innerHTML = `<div class="lbl">NEIGHBOURING REGIONS — ${nb.length}</div>` +
+      nb.map(n => { const j = byId.get(n.id); if (j == null) return '';
+        return `<button class="link" data-i="${j}" ${n.cross?'style="border-left-color:#f5b95e"':''}>` +
+               `${esc(CL[j].label || n.id)}<br><i>${CL[j].lane} · ${CL[j].size.toLocaleString()} chunks · sim ${n.w.toFixed(3)}` +
+               `${n.cross?' · CROSS-LANE':''}</i></button>`; }).join('');
+    $('links').querySelectorAll('.link').forEach(b =>
+      b.onclick = () => selectCluster(+b.dataset.i, true));
+    $('info').classList.add('show');
+    ring.position.set(...aPos[i]); ring.scale.setScalar(CL[i].r*1.9); ring.visible = true;
+    aGlow[i] = Math.max(aGlow[i], 0.85);
+    if (moveCamera) flyTo(aPos[i]);
+  }
+  window.__selectCluster = selectCluster;
+
+  $('atlasbtn').onclick = () => {
+    atlasMode = !atlasMode;
+    document.body.classList.toggle('atlas', atlasMode);
+    $('atlasbtn').classList.toggle('on', atlasMode);
+    $('atlasbtn').textContent = atlasMode ? '◈ DOC GRAPH' : '◉ LIVE MEMORY';
+    nodeMesh.visible = !atlasMode; edgeLines.visible = !atlasMode;
+    hiLines.visible = !atlasMode;
+    aMesh.visible = atlasMode; aEdges.visible = atlasMode;
+    ring.visible = false; $('info').classList.remove('show'); selected = -1;
+    $('counts').textContent = atlasMode
+      ? `${CL.length} regions · ${ATLAS.vectors.toLocaleString()} vectors · ${ATLAS.edges.length} links`
+      : `${g.counts.nodes.toLocaleString()} nodes · ${g.counts.edges.toLocaleString()} edges`;
+    $('hint').textContent = atlasMode
+      ? 'the living memory — ask a question above and watch the regions that answer it ignite'
+      : 'drag to orbit · scroll to zoom · right-drag to pan · click a node to open it · click its links to follow the path';
+    if (atlasMode) setTimeout(() => $('probe').focus(), 60);
+  };
+} else {
+  $('atlasbtn').disabled = true;
+  $('atlasbtn').title = 'atlas not built — run: py -3.11 build_atlas.py';
+  $('atlasbtn').style.opacity = .4;
+}
 
 /* ── camera rig: orbit + pan + zoom, with an optional fly mode ─────── */
 const target = new THREE.Vector3(0,0,0);
@@ -255,6 +405,11 @@ function pick(e, centre = false){
   if(centre) ndc.set(0,0);
   else ndc.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
   ray.setFromCamera(ndc, camera);
+  if(atlasMode && aMesh){
+    const h = ray.intersectObject(aMesh, false)[0];
+    if(h && h.instanceId != null) window.__selectCluster(h.instanceId);
+    return;
+  }
   const hit = ray.intersectObject(nodeMesh, false)[0];
   if(hit && hit.instanceId != null) select(hit.instanceId);
 }
@@ -298,6 +453,16 @@ $('search').addEventListener('keydown', e => {
   const q = $('search').value.trim().toLowerCase();
   if(!q) return;
   let best = -1, score = 1e9;
+  if(atlasMode && ATLAS){
+    // in LIVE MEMORY mode, search the region labels and their terms
+    ATLAS.clusters.forEach((c,i) => {
+      const hay = ((c.label||'') + ' ' + (c.terms||[]).join(' ')).toLowerCase();
+      const at = hay.indexOf(q);
+      if(at >= 0 && at < score){ score = at; best = i; }
+    });
+    if(best >= 0) window.__selectCluster(best, true);
+    return;
+  }
   NODES.forEach((n,i) => {
     const l = n.label.toLowerCase();
     const at = l.indexOf(q);
@@ -336,6 +501,19 @@ renderer.setAnimationLoop(() => {
     if(keys.has('KeyQ')) vel.y -= 1;
     if(vel.lengthSq()) target.addScaledVector(vel.normalize(), speed);
     applyOrbit();
+  }
+  /* activation flash: ignited regions burn white-gold, then cool back to their
+     lane colour. Driven by real retrieval hits, never by a timer — nothing
+     glows here unless the engine actually pulled a chunk from that cluster. */
+  if(atlasMode && aMesh && aGlow.some(v => v > 0.001)){
+    const c = new THREE.Color();
+    for(let i=0;i<aGlow.length;i++){
+      if(aGlow[i] <= 0.001){ if(aGlow[i] !== 0){ aGlow[i]=0; aMesh.setColorAt(i,aBase[i]); } continue; }
+      aGlow[i] = Math.max(0, aGlow[i] - dt*0.42);
+      c.copy(aBase[i]).lerp(new THREE.Color(0xfff6d8), Math.min(1, aGlow[i]));
+      aMesh.setColorAt(i, c);
+    }
+    aMesh.instanceColor.needsUpdate = true;
   }
   if(ring.visible) ring.rotation.y += dt*1.1, ring.rotation.x += dt*.6;
   renderer.render(scene, camera);

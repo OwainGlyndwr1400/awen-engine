@@ -148,6 +148,88 @@ def api_graph():
     return send_file(NEURAL_MAP, mimetype="application/json")
 
 
+ATLAS = ROOT / "docs" / "atlas.json"
+
+
+@app.route("/api/atlas")
+def api_atlas():
+    """Clusters of the LIVE FAISS index — the memory the engine actually dreams
+    over, as opposed to /api/graph which is the graphify document catalogue.
+    Built by build_atlas.py."""
+    if not ATLAS.exists():
+        return jsonify({"error": "atlas not built",
+                        "hint": "run: py -3.11 build_atlas.py"}), 404
+    return send_file(ATLAS, mimetype="application/json")
+
+
+@app.route("/api/probe", methods=["POST"])
+def api_probe():
+    """Run a real retrieval and report which ATLAS clusters lit up.
+
+    This is what drives the Neural Map's activation flash: ask a question, watch
+    the regions of the living memory that answer it fire. The engine tags every
+    hit with its cluster (see build_atlas.py), so nothing is inferred here.
+    """
+    body = request.get_json(silent=True) or {}
+    query = str(body.get("query", "")).strip()
+    if not query:
+        return jsonify({"error": "query required"}), 400
+    node = str(body.get("node", "lumos")).strip() or "lumos"
+    try:
+        top_k = max(1, min(50, int(body.get("top_k", 14))))
+    except (TypeError, ValueError):
+        top_k = 14
+
+    c = cfg()
+    try:
+        r = requests.post(f"{bridge(c)}/search",
+                          json={"query": query, "node": node,
+                                "params": {"top_k": top_k}}, timeout=90)
+        r.raise_for_status()
+        hits = r.json()
+    except Exception as e:
+        return jsonify({"error": f"engine unreachable: {e}"}), 503
+    if isinstance(hits, dict) and hits.get("error"):
+        return jsonify({"error": hits["error"]}), 400
+
+    fired, order = {}, []
+    for h in hits:
+        cid = h.get("cluster")
+        if not cid:
+            continue
+        if cid not in fired:
+            fired[cid] = {"cluster": cid, "hits": 0,
+                          "best": h.get("distance"), "lane": h.get("source")}
+            order.append(cid)
+        fired[cid]["hits"] += 1
+        if h.get("distance") is not None and h["distance"] < fired[cid]["best"]:
+            fired[cid]["best"] = h["distance"]
+
+    return jsonify({
+        "query": query, "node": node, "returned": len(hits),
+        "clusters": [fired[c_] for c_ in order],
+        "untagged": sum(1 for h in hits if not h.get("cluster")),
+        "excerpts": [{"cluster": h.get("cluster"), "lane": h.get("source"),
+                      "d": h.get("distance"),
+                      "text": " ".join(str(h.get("chunk", "")).split())[:260]}
+                     for h in hits[:8]],
+    })
+
+
+REGULUS = ROOT / "docs" / "regulus_corridor.json"
+
+
+@app.route("/api/regulus")
+def api_regulus():
+    """Declination of Regulus (and four control stars) per epoch, precomputed by
+    build_regulus_corridor.py with astropy. The panel does only the spherical
+    triangle in JS, so what it shows is computed astronomy, not stored text."""
+    if not REGULUS.exists():
+        return jsonify({"error": "corridor not built",
+                        "hint": "run: py -3.11 build_regulus_corridor.py"}), 404
+    return send_file(REGULUS, mimetype="application/json")
+
+
 @app.route("/api/config")
 def api_config():
     c = cfg()
@@ -477,6 +559,167 @@ def api_aether():
     return jsonify(out)
 
 
+# ===========================================================================
+#  TOOLS — the Circle could only ever talk. Now it can look things up.
+#
+#  OpenAI-compatible `tool_calls`, run in a bounded loop (default 4 rounds)
+#  before the model is made to answer. Every tool is read-mostly and sandboxed:
+#
+#   * read_file NEVER leaves the project directory, and refuses config.json and
+#     anything else secret-bearing — config.json holds a Gmail app password.
+#   * write_note can only write inside notes/, and only .md.
+#   * search_memory goes through the engine, so it inherits the node's role
+#     (non-admin nodes see shared only) and the split-lane quotas.
+#
+#  Nothing here can delete, execute, or reach the network unless a search key
+#  is explicitly configured.
+# ===========================================================================
+NOTES_DIR = ROOT / "notes"
+SECRET_NAMES = {"config.json", ".env", "credentials.json", "token.json", "secrets.json"}
+READABLE_SUFFIXES = {".md", ".txt", ".json", ".py", ".html", ".css", ".js", ".jsonl", ".csv", ".yml", ".yaml"}
+
+TOOL_SPECS = [
+    {"type": "function", "function": {
+        "name": "search_memory",
+        "description": "Search the Awen Grid's own memory (the FAISS archive of research, "
+                       "books and past exchanges). Use this whenever you need to check what "
+                       "the Grid actually holds rather than relying on your own recall.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "What to look for."},
+            "top_k": {"type": "integer", "description": "How many chunks (1-20, default 8)."}},
+            "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "read_file",
+        "description": "Read a text file from the Awen Grid project directory. "
+                       "Use for the framework docs, glossary, theorem indices, scripts.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Path relative to the project root, e.g. 'RHC_FRAMEWORK.md'."},
+            "max_chars": {"type": "integer", "description": "Truncate to this many characters (default 6000)."}},
+            "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "list_files",
+        "description": "List files in the project directory, optionally filtered by a glob.",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string", "description": "Glob such as '*.md' or 'docs/*.json'. Default '*.md'."}},
+            "required": []}}},
+    {"type": "function", "function": {
+        "name": "write_note",
+        "description": "Save a note to the Grid's notes/ folder so it persists beyond this conversation.",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string", "description": "Short title; becomes the filename."},
+            "text": {"type": "string", "description": "Markdown body of the note."}},
+            "required": ["title", "text"]}}},
+    {"type": "function", "function": {
+        "name": "current_time",
+        "description": "The current local date and time.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+]
+
+
+def _safe_project_path(rel: str) -> Path:
+    """Resolve `rel` inside ROOT or raise. Blocks traversal and secrets."""
+    p = (ROOT / str(rel).strip().lstrip("/\\")).resolve()
+    if not str(p).startswith(str(ROOT.resolve())):
+        raise ValueError("path escapes the project directory")
+    if p.name.lower() in SECRET_NAMES:
+        raise ValueError(f"'{p.name}' is not readable through tools (it holds credentials)")
+    return p
+
+
+def run_tool(name: str, args: dict, c: dict, node: str) -> str:
+    """Execute one tool call. Always returns a string — the model reads it."""
+    try:
+        if name == "search_memory":
+            q = str(args.get("query", "")).strip()
+            if not q:
+                return "error: query is required"
+            k = max(1, min(20, int(args.get("top_k", 8) or 8)))
+            r = requests.post(f"{bridge(c)}/search",
+                              json={"query": q, "node": node, "params": {"top_k": k}}, timeout=90)
+            r.raise_for_status()
+            hits = r.json()
+            if not isinstance(hits, list) or not hits:
+                return "no matches in memory"
+            out = []
+            for i, h in enumerate(hits, 1):
+                txt = " ".join(str(h.get("chunk", "")).split())[:700]
+                out.append(f"[{i}] ({h.get('source','?')}, d={h.get('distance',0):.3f}) {txt}")
+            return "\n".join(out)
+
+        if name == "read_file":
+            p = _safe_project_path(args.get("path", ""))
+            if not p.exists() or not p.is_file():
+                return f"error: '{args.get('path')}' not found"
+            if p.suffix.lower() not in READABLE_SUFFIXES:
+                return f"error: '{p.suffix}' is not a readable text type"
+            cap = max(200, min(20000, int(args.get("max_chars", 6000) or 6000)))
+            txt = p.read_text(encoding="utf-8", errors="replace")
+            return txt[:cap] + ("\n… (truncated)" if len(txt) > cap else "")
+
+        if name == "list_files":
+            pat = str(args.get("pattern", "*.md")).strip() or "*.md"
+            if ".." in pat:
+                return "error: '..' not allowed"
+            found = sorted(p for p in ROOT.glob(pat)
+                           if p.is_file() and p.name.lower() not in SECRET_NAMES)
+            if not found:
+                return f"no files match '{pat}'"
+            return "\n".join(f"{p.relative_to(ROOT)}  ({p.stat().st_size/1024:.1f} KB)"
+                             for p in found[:120])
+
+        if name == "write_note":
+            title = str(args.get("title", "")).strip() or "untitled"
+            slug = re.sub(r"[^a-zA-Z0-9\- ]+", "", title).strip().replace(" ", "-")[:60] or "untitled"
+            NOTES_DIR.mkdir(exist_ok=True)
+            p = NOTES_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{slug}.md"
+            p.write_text(f"# {title}\n\n{args.get('text','')}\n", encoding="utf-8")
+            return f"saved: notes/{p.name}"
+
+        if name == "current_time":
+            return datetime.now().strftime("%A %d %B %Y, %H:%M:%S (local)")
+
+        return f"error: unknown tool '{name}'"
+    except Exception as e:
+        return f"error: {e}"
+
+
+def llm_call(c: dict, cloud: bool, messages: list, tools=None, timeout=None):
+    """One OpenAI-compatible completion against NVIDIA or LM Studio."""
+    if cloud:
+        nv = nvidia_block(c)
+        payload = {"model": str(nv.get("model", "")).strip(), "messages": messages,
+                   "temperature": float(c.get("lmstudio_temp", 0.6)),
+                   "max_tokens": int(nv.get("max_tokens", 4096))}
+        if tools:
+            payload["tools"] = tools
+        r = http.post(str(nv.get("base_url", "https://integrate.api.nvidia.com/v1")).rstrip("/") + "/chat/completions",
+                      headers={"Authorization": f"Bearer {str(nv.get('api_key','')).strip()}"},
+                      json=payload, timeout=timeout or int(nv.get("timeout", 300)))
+    else:
+        payload = {"model": str(c.get("light_model") or c.get("deep_model") or "").strip(),
+                   "messages": messages, "temperature": float(c.get("lmstudio_temp", 0.6))}
+        mt = int(c.get("lmstudio_max_tokens", -1))
+        if mt > 0:
+            payload["max_tokens"] = mt
+        if tools:
+            payload["tools"] = tools
+        r = http.post(str(c.get("lmstudio_url", "http://localhost:1234")).rstrip("/") + "/v1/chat/completions",
+                      json=payload, timeout=timeout or int(c.get("lmstudio_timeout", 800)))
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]
+
+
+@app.route("/api/tools")
+def api_tools():
+    """What the Circle can reach for. Handy for the deck to display."""
+    c = cfg()
+    enabled = bool((c.get("client_config") or {}).get("tools_enabled", True))
+    return jsonify({"enabled": enabled,
+                    "tools": [{"name": t["function"]["name"],
+                               "description": t["function"]["description"]}
+                              for t in TOOL_SPECS]})
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     body = request.json or {}
@@ -524,38 +767,74 @@ def api_chat():
     if mem_lines:
         user_prompt = f"{message}\n\nRESONANT MEMORIES:\n" + "\n".join(mem_lines)
 
-    # LLM call: NVIDIA when armed, else LM Studio
+    # LLM call: NVIDIA when armed, else LM Studio.
+    # With tools on this is a BOUNDED loop: the model may call tools, read the
+    # results and call again, up to tool_max_rounds, after which it must answer
+    # from what it has. Without the bound a confused model will call search_memory
+    # forever and never speak.
+    model_label = (("\u2601 " + str(nvidia_block(c).get("model", "")).strip()) if cloud
+                   else ("\U0001f3e0 " + str(c.get("light_model") or c.get("deep_model") or "").strip()))
+    use_tools = bool(cconf.get("tools_enabled", True))
+    max_rounds = max(0, min(8, int(cconf.get("tool_max_rounds", 4))))
+
+    # The persona prompts are 14 KB character briefs that never mention tools.
+    # Passing `tools` alone is not enough: measured, every local model answered
+    # from the persona and one of them CLAIMED to have read a file it never
+    # opened. The affordance has to be stated in the system prompt or it does
+    # not exist as far as the model is concerned.
+    sys_content = system_prompt
+    if use_tools:
+        sys_content += (
+            "\n\n---\nTOOLS. You have real tools: search_memory, read_file, "
+            "list_files, write_note, current_time. They reach the Grid's actual "
+            "FAISS archive and project files.\n"
+            "- Prefer a tool over recall for anything checkable: what a document "
+            "says, what the archive holds, today's date.\n"
+            "- Never claim to have used a tool you did not call, and never invent "
+            "a file's contents. If a tool errors, say so plainly.\n"
+            "- Stay in character while using them; the tools serve the voice, not "
+            "the other way round."
+        )
+
+    messages = [{"role": "system", "content": sys_content},
+                {"role": "user", "content": user_prompt}]
+    tool_trace = []
+
     try:
-        if cloud:
-            nv = nvidia_block(c)
-            model_label = "â˜ " + str(nv.get("model", "")).strip()
-            r = http.post(str(nv.get("base_url", "https://integrate.api.nvidia.com/v1")).rstrip("/") + "/chat/completions",
-                          headers={"Authorization": f"Bearer {str(nv.get('api_key','')).strip()}"},
-                          json={"model": str(nv.get("model", "")).strip(),
-                                "messages": [{"role": "system", "content": system_prompt},
-                                             {"role": "user", "content": user_prompt}],
-                                "temperature": float(c.get("lmstudio_temp", 0.6)),
-                                "max_tokens": int(nv.get("max_tokens", 4096))},
-                          timeout=int(nv.get("timeout", 300)))
-        else:
-            model = str(c.get("light_model") or c.get("deep_model") or "").strip()
-            model_label = "ðŸ  " + model
-            payload = {"model": model,
-                       "messages": [{"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_prompt}],
-                       "temperature": float(c.get("lmstudio_temp", 0.6))}
-            mt = int(c.get("lmstudio_max_tokens", -1))
-            if mt > 0:
-                payload["max_tokens"] = mt
-            r = http.post(str(c.get("lmstudio_url", "http://localhost:1234")).rstrip("/") + "/v1/chat/completions",
-                          json=payload, timeout=int(c.get("lmstudio_timeout", 800)))
-        r.raise_for_status()
-        content = r.json()["choices"][0]["message"].get("content") or ""
+        msg = llm_call(c, cloud, messages, tools=TOOL_SPECS if use_tools else None)
+
+        rounds = 0
+        while use_tools and msg.get("tool_calls") and rounds < max_rounds:
+            rounds += 1
+            messages.append({"role": "assistant", "content": msg.get("content") or "",
+                             "tool_calls": msg["tool_calls"]})
+            for call in msg["tool_calls"]:
+                fn = call.get("function") or {}
+                name = str(fn.get("name", ""))
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except Exception:
+                    args = {}
+                result = str(run_tool(name, args, c, node))
+                tool_trace.append({"tool": name, "args": args,
+                                   "ok": not result.startswith("error:"),
+                                   "chars": len(result)})
+                messages.append({"role": "tool", "tool_call_id": call.get("id", ""),
+                                 "name": name, "content": result[:8000]})
+            msg = llm_call(c, cloud, messages, tools=TOOL_SPECS)
+
+        if use_tools and msg.get("tool_calls") and rounds >= max_rounds:
+            messages.append({"role": "user",
+                             "content": "Tool budget spent. Answer now from what you have."})
+            msg = llm_call(c, cloud, messages, tools=None)
+
+        content = msg.get("content") or ""
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         if not content:
-            content = "(empty response â€” model may have spent its budget thinking)"
+            content = "(empty response \u2014 model may have spent its budget thinking)"
     except Exception as e:
-        return jsonify({"response": f"âš  LLM call failed: {e}", "model": "", "mem_count": mem_count, "indexed": False})
+        return jsonify({"response": f"\u26a0 LLM call failed: {e}", "model": "",
+                        "mem_count": mem_count, "indexed": False, "tools": tool_trace})
 
     # Index the exchange as ONE entry: question and answer stay together, so a
     # dream that later surfaces this fragment still knows what was asked.
@@ -568,13 +847,14 @@ def api_chat():
         entry = f"CHAT ({state_name or 'node'} Â· {node})\nQ: {q}\n\nA: {a}"
         try:
             r = http.post(f"{bridge(c)}/add_entry",
-                          json={"text": entry, "profile": "private", "node": node,
+                          json={"text": entry, "profile": "conversations", "node": node,
                                 "source": f"Awen Command Deck ({node})"}, timeout=60)
             indexed = r.ok and r.json().get("status") == "success"
         except Exception:
             pass
 
-    return jsonify({"response": content, "model": model_label, "mem_count": mem_count, "indexed": indexed})
+    return jsonify({"response": content, "model": model_label, "mem_count": mem_count,
+                    "indexed": indexed, "tools": tool_trace})
 
 
 if __name__ == "__main__":
