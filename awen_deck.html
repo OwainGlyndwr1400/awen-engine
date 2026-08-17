@@ -35,6 +35,21 @@ body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:80
   gap:9px; padding:9px}
 
 /* ---------- top bar ---------- */
+/* tablets: stack the rails under the chat instead of squashing three columns */
+@media (max-width:1100px), (pointer:coarse){
+  #deck{grid-template-columns:1fr; grid-template-rows:auto 46vh auto auto auto 22px;
+    grid-template-areas:"top" "mid" "input" "left" "right" "tick"; height:auto; min-height:100vh;
+    overflow-y:auto}
+  body{overflow:auto}
+  #left,#right{max-height:none}
+  #left .pbody{max-height:44vh}
+  #vmtrace{height:112px}
+  #msgbox{font-size:16px}            /* stops mobile browsers zooming on focus */
+  #lamps{gap:9px;font-size:10px}
+  .title{font-size:12px;letter-spacing:.28em}
+  #holo{opacity:.18}                 /* the hologram is decoration on a small screen */
+}
+
 #topbar{grid-area:top; display:flex; align-items:center; gap:18px; padding:0 18px;
   background:var(--panel); border:1px solid var(--panel-edge); border-radius:8px;
   backdrop-filter:blur(6px)}

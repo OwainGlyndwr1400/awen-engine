@@ -56,6 +56,18 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:50;
 #crosshair::before{left:6px;top:0;width:2px;height:14px}
 #crosshair::after{top:6px;left:0;height:2px;width:14px}
 body.fly #crosshair{display:block}
+
+/* tablets / phones: stack the chrome, drop fly mode, fatten touch targets */
+@media (max-width:900px), (pointer:coarse){
+  #top{height:auto;flex-wrap:wrap;padding:8px 10px;gap:8px}
+  .title{font-size:11px;letter-spacing:.25em;width:100%}
+  #search{width:100%;order:3;font-size:16px;padding:9px 10px}   /* 16px stops iOS/Android zoom-on-focus */
+  #flybtn{display:none}                                          /* no pointer lock on touch */
+  #counts{font-size:10px}
+  #info{top:auto;bottom:0;right:0;left:0;width:100%;max-height:46vh;border-radius:10px 10px 0 0}
+  .link{padding:11px 10px;font-size:12.5px}
+  #hint{display:none}
+}
 </style>
 </head>
 <body>
@@ -192,6 +204,30 @@ addEventListener('wheel', e => {
   applyOrbit();
 }, {passive:true});
 renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ── touch: pinch to zoom, two fingers to pan (tablets/phones) ─────── */
+let touch = null;
+const dist2 = t => Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
+const mid2  = t => ({ x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 });
+renderer.domElement.addEventListener('touchstart', e => {
+  if(e.touches.length === 2){
+    drag = null;                                   // cancel the orbit drag
+    touch = { d: dist2(e.touches), m: mid2(e.touches), dist };
+  }
+}, {passive:true});
+renderer.domElement.addEventListener('touchmove', e => {
+  if(e.touches.length !== 2 || !touch) return;
+  e.preventDefault();
+  const d = dist2(e.touches), m = mid2(e.touches);
+  dist = THREE.MathUtils.clamp(touch.dist * (touch.d / d), 1.2, 120);
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+  const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+  target.addScaledVector(right, -(m.x-touch.m.x)*dist*0.0016)
+        .addScaledVector(up,     (m.y-touch.m.y)*dist*0.0016);
+  touch.m = m;
+  applyOrbit();
+}, {passive:false});
+renderer.domElement.addEventListener('touchend', () => { touch = null; }, {passive:true});
 
 /* fly mode: pointer lock + WASD, for actually walking the web */
 $('flybtn').onclick = () => renderer.domElement.requestPointerLock();
