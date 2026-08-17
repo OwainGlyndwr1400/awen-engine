@@ -84,6 +84,35 @@ def index():
     return send_file(DECK_HTML)
 
 
+# --- neural map ----------------------------------------------------------
+MAP_HTML = ROOT / "awen_map.html"
+NEURAL_MAP = ROOT / "docs" / "neural_map.json"
+
+
+@app.route("/map")
+def neural_map():
+    return send_file(MAP_HTML)
+
+
+@app.route("/vendor/<path:name>")
+def vendor(name):
+    """Three.js and friends, served locally so VR works without internet."""
+    p = (ROOT / "vendor" / name).resolve()
+    if not str(p).startswith(str((ROOT / "vendor").resolve())) or not p.exists():
+        return jsonify({"error": "not found"}), 404
+    return send_file(p)
+
+
+@app.route("/api/graph")
+def api_graph():
+    """The pre-laid-out 3D knowledge graph. Built by build_neural_map.py —
+    the layout solver runs there, never in the headset's frame budget."""
+    if not NEURAL_MAP.exists():
+        return jsonify({"error": "neural map not built",
+                        "hint": "run: py -3.11 build_neural_map.py"}), 404
+    return send_file(NEURAL_MAP, mimetype="application/json")
+
+
 @app.route("/api/config")
 def api_config():
     c = cfg()
@@ -499,12 +528,28 @@ def api_chat():
 
 
 if __name__ == "__main__":
-    print("=" * 60)
+    # Loopback by default. --lan binds every interface so a standalone headset
+    # on the same wifi can reach the VR room — only do that on a network you
+    # trust, since the deck proxies an unauthenticated memory API.
+    lan = "--lan" in sys.argv
+    host = "0.0.0.0" if lan else "127.0.0.1"
+
+    print("=" * 62)
     print("  🜂🜁🜃🜄  AWEN GRID — COMMAND DECK")
-    print(f"  http://localhost:{PORT}")
-    print("=" * 60)
+    print(f"  deck : http://localhost:{PORT}")
+    print(f"  vr   : http://localhost:{PORT}/vr")
+    if lan:
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close()
+            print(f"  lan  : http://{ip}:{PORT}/vr   ← from the headset browser")
+        except Exception:
+            print("  lan  : bound to all interfaces")
+        print("  ⚠ LAN mode: anyone on this network can reach the deck.")
+    print("=" * 62)
     try:
         from waitress import serve
-        serve(app, host="127.0.0.1", port=PORT, threads=8)
+        serve(app, host=host, port=PORT, threads=8)
     except ImportError:
-        app.run(host="127.0.0.1", port=PORT, debug=False)
+        app.run(host=host, port=PORT, debug=False)

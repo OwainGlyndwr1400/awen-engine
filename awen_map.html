@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AWEN GRID — THE NEURAL MAP</title>
+<style>
+:root{--bg:#03070d;--panel:rgba(8,22,36,.78);--edge:rgba(57,230,255,.22);
+      --cyan:#39e6ff;--soft:#7ff0ff;--dim:#5d8fa3;--holo:#2ef5c8;--gold:#f5b95e;
+      --mono:'Consolas','Cascadia Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:#bfe3ef;font-family:'Segoe UI',system-ui,sans-serif}
+canvas{display:block;position:fixed;inset:0}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.10) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+
+#top{position:fixed;top:0;left:0;right:0;height:50px;z-index:20;display:flex;align-items:center;
+  gap:16px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--edge);backdrop-filter:blur(6px)}
+.title{font-size:13px;letter-spacing:.4em;color:var(--soft);text-shadow:0 0 12px rgba(57,230,255,.5)}
+.title small{letter-spacing:.28em;color:var(--dim);font-weight:400}
+#search{background:#0a1c2c;border:1px solid var(--edge);border-radius:5px;color:var(--soft);
+  font-family:var(--mono);font-size:12px;padding:6px 10px;width:260px;outline:none}
+#search:focus{border-color:rgba(57,230,255,.6)}
+#counts{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.1em}
+.btn{background:none;border:1px solid rgba(46,245,200,.4);color:var(--holo);font-family:var(--mono);
+  font-size:10px;letter-spacing:.2em;border-radius:4px;padding:5px 12px;cursor:pointer}
+.btn:hover{background:rgba(46,245,200,.14)}
+.btn.on{background:rgba(46,245,200,.22);box-shadow:0 0 12px rgba(46,245,200,.25)}
+
+#info{position:fixed;top:62px;right:12px;width:330px;max-height:calc(100vh - 130px);z-index:20;
+  background:var(--panel);border:1px solid var(--edge);border-radius:8px;backdrop-filter:blur(6px);
+  display:none;flex-direction:column;overflow:hidden}
+#info.show{display:flex}
+#info h2{font-size:13px;color:var(--holo);padding:12px 14px 6px;line-height:1.45;
+  text-shadow:0 0 10px rgba(46,245,200,.4)}
+#info .meta{font-family:var(--mono);font-size:10.5px;color:var(--dim);padding:0 14px 10px;
+  border-bottom:1px solid var(--edge);letter-spacing:.06em}
+#info .src{font-family:var(--mono);font-size:10px;color:var(--gold);padding:8px 14px;
+  border-bottom:1px solid var(--edge);word-break:break-word;line-height:1.5}
+#links{overflow-y:auto;padding:8px 10px;scrollbar-width:thin;scrollbar-color:#155e73 transparent}
+#links::-webkit-scrollbar{width:5px}#links::-webkit-scrollbar-thumb{background:#155e73}
+#links .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--cyan);padding:4px 4px 8px}
+.link{display:block;width:100%;text-align:left;background:rgba(6,16,28,.6);border:1px solid rgba(57,230,255,.14);
+  border-left:3px solid var(--cyan);border-radius:5px;color:#bfe3ef;font-family:inherit;font-size:11.5px;
+  padding:7px 9px;margin-bottom:5px;cursor:pointer;line-height:1.4}
+.link:hover{border-color:rgba(46,245,200,.7);background:rgba(46,245,200,.1)}
+.link i{font-style:normal;color:var(--dim);font-family:var(--mono);font-size:9.5px}
+
+#hint{position:fixed;bottom:10px;left:0;right:0;text-align:center;z-index:20;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:#2c4a58}
+#load{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);font-family:var(--mono);font-size:12px;color:var(--holo);letter-spacing:.2em}
+#crosshair{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;z-index:19;display:none;
+  pointer-events:none}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(46,245,200,.7)}
+#crosshair::before{left:6px;top:0;width:2px;height:14px}
+#crosshair::after{top:6px;left:0;height:2px;width:14px}
+body.fly #crosshair{display:block}
+</style>
+</head>
+<body>
+<div id="load">◈ BUILDING THE WEB…</div>
+<div id="crosshair"></div>
+
+<div id="top">
+  <div class="title">NEURAL MAP <small>// awen grid</small></div>
+  <input id="search" placeholder="search the web…  (Enter = jump to best match)">
+  <button class="btn" id="flybtn" title="WASD to move, mouse to look, Esc to exit">FLY MODE</button>
+  <button class="btn" id="resetbtn">RESET VIEW</button>
+  <a class="btn" href="/" style="text-decoration:none">← DECK</a>
+  <div id="counts"></div>
+</div>
+
+<div id="info">
+  <h2 id="i-label"></h2>
+  <div class="meta" id="i-meta"></div>
+  <div class="src" id="i-src"></div>
+  <div id="links"></div>
+</div>
+
+<div id="hint">drag to orbit · scroll to zoom · right-drag to pan · click a node to open it · click its links to follow the path</div>
+
+<script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+const $ = id => document.getElementById(id);
+
+/* ── scene ─────────────────────────────────────────────────────────── */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x03070d);
+scene.fog = new THREE.FogExp2(0x03070d, 0.020);
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.05, 400);
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+scene.add(new THREE.HemisphereLight(0x39e6ff, 0x081420, 1.25));
+const key = new THREE.DirectionalLight(0x2ef5c8, .65); key.position.set(5,9,5); scene.add(key);
+const grid = new THREE.GridHelper(80, 40, 0x0f4353, 0x0a2836);
+grid.position.y = -10; scene.add(grid);
+
+const TYPE_COLOR = {
+  document:0x2b6f86, concept:0x2ef5c8, entity:0xf5b95e, person:0xff8fb0,
+  theory:0x9d7ff0, framework:0x9d7ff0, tool:0x7ff0ff, event:0xffd28a,
+  note:0x39e6ff, method:0x6ee7c8, observation:0xa8d8e8, proof:0xc9a0ff,
+  mathematical_theorem:0xc9a0ff, organization:0xffa9a9, location:0x8fd6a0
+};
+const colorFor = t => new THREE.Color(TYPE_COLOR[t] ?? 0x3d7b93);
+
+let NODES = [], EDGES = [], ADJ = [], nodeMesh, edgeLines, hiLines, selected = -1;
+
+/* ── build ─────────────────────────────────────────────────────────── */
+const g = await (await fetch('/api/graph')).json();
+NODES = g.nodes; EDGES = g.edges;
+ADJ = Array.from({length:NODES.length}, () => []);
+EDGES.forEach(([a,b]) => { ADJ[a].push(b); ADJ[b].push(a); });
+$('counts').textContent = `${g.counts.nodes.toLocaleString()} nodes · ${g.counts.edges.toLocaleString()} edges`;
+
+const geo = new THREE.IcosahedronGeometry(1, 2);
+const mat = new THREE.MeshStandardMaterial({ roughness:.34, metalness:.12, emissive:0x0a2630, emissiveIntensity:.75 });
+nodeMesh = new THREE.InstancedMesh(geo, mat, NODES.length);
+const m4 = new THREE.Matrix4();
+NODES.forEach((n,i) => {
+  n.r = 0.10 + n.w * 0.55;                      // hubs read as hubs
+  m4.makeScale(n.r,n.r,n.r).setPosition(...n.p);
+  nodeMesh.setMatrixAt(i, m4);
+  nodeMesh.setColorAt(i, colorFor(n.type));
+});
+nodeMesh.instanceMatrix.needsUpdate = true;
+scene.add(nodeMesh);
+
+const pts = new Float32Array(EDGES.length*6);
+EDGES.forEach(([a,b],i)=>{ pts.set(NODES[a].p,i*6); pts.set(NODES[b].p,i*6+3); });
+const eg = new THREE.BufferGeometry();
+eg.setAttribute('position', new THREE.BufferAttribute(pts,3));
+edgeLines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color:0x39e6ff, transparent:true, opacity:.13 }));
+scene.add(edgeLines);
+
+/* highlighted edges of the selected node, drawn brighter on top */
+hiLines = new THREE.LineSegments(new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color:0x2ef5c8, transparent:true, opacity:.85 }));
+scene.add(hiLines);
+
+/* selection ring */
+const ring = new THREE.Mesh(new THREE.TorusGeometry(1, .045, 8, 48),
+  new THREE.MeshBasicMaterial({ color:0x2ef5c8 }));
+ring.visible = false; scene.add(ring);
+$('load').style.display = 'none';
+
+/* ── camera rig: orbit + pan + zoom, with an optional fly mode ─────── */
+const target = new THREE.Vector3(0,0,0);
+let dist = 26, yaw = 0.6, pitch = 0.35, fly = false;
+const vel = new THREE.Vector3(), keys = new Set();
+function applyOrbit(){
+  camera.position.set(
+    target.x + dist*Math.cos(pitch)*Math.sin(yaw),
+    target.y + dist*Math.sin(pitch),
+    target.z + dist*Math.cos(pitch)*Math.cos(yaw));
+  camera.lookAt(target);
+}
+applyOrbit();
+
+let drag = null;
+renderer.domElement.addEventListener('pointerdown', e => {
+  if(fly) return;
+  drag = { x:e.clientX, y:e.clientY, btn:e.button, moved:0 };
+});
+addEventListener('pointerup', e => {
+  if(!fly && drag && drag.moved < 5 && drag.btn === 0) pick(e);
+  drag = null;
+});
+addEventListener('pointermove', e => {
+  if(fly){ yaw -= e.movementX*0.0022; pitch = THREE.MathUtils.clamp(pitch - e.movementY*0.0022, -1.5, 1.5); return; }
+  if(!drag) return;
+  const dx = e.clientX-drag.x, dy = e.clientY-drag.y;
+  drag.moved += Math.abs(dx)+Math.abs(dy);
+  if(drag.btn === 2){                                  // right-drag pans
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+    const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+    target.addScaledVector(right, -dx*dist*0.0016).addScaledVector(up, dy*dist*0.0016);
+  } else { yaw -= dx*0.005; pitch = THREE.MathUtils.clamp(pitch + dy*0.005, -1.45, 1.45); }
+  drag = { x:e.clientX, y:e.clientY, btn:drag.btn, moved:drag.moved };
+  applyOrbit();
+});
+addEventListener('wheel', e => {
+  if(fly) return;
+  dist = THREE.MathUtils.clamp(dist * (1 + Math.sign(e.deltaY)*0.11), 1.2, 120);
+  applyOrbit();
+}, {passive:true});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+/* fly mode: pointer lock + WASD, for actually walking the web */
+$('flybtn').onclick = () => renderer.domElement.requestPointerLock();
+document.addEventListener('pointerlockchange', () => {
+  fly = document.pointerLockElement === renderer.domElement;
+  document.body.classList.toggle('fly', fly);
+  $('flybtn').classList.toggle('on', fly);
+  $('hint').textContent = fly
+    ? 'WASD move · Q/E up-down · Shift boost · click a node to open it · Esc to exit fly mode'
+    : 'drag to orbit · scroll to zoom · right-drag to pan · click a node to open it · click its links to follow the path';
+});
+addEventListener('keydown', e => {
+  keys.add(e.code);
+  if(e.code === 'Escape' && fly) document.exitPointerLock();
+  if(e.code === 'KeyF' && document.activeElement !== $('search')) $('flybtn').click();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+renderer.domElement.addEventListener('click', e => { if(fly) pick(e, true); });
+
+/* ── picking ───────────────────────────────────────────────────────── */
+const ray = new THREE.Raycaster();
+ray.params.Mesh = { threshold: 0 };
+const ndc = new THREE.Vector2();
+function pick(e, centre = false){
+  if(centre) ndc.set(0,0);
+  else ndc.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(nodeMesh, false)[0];
+  if(hit && hit.instanceId != null) select(hit.instanceId);
+}
+
+function select(i, moveCamera = false){
+  selected = i;
+  const n = NODES[i];
+  $('i-label').textContent = n.label;
+  $('i-meta').textContent = `${n.type} · ${n.deg} connection${n.deg===1?'':'s'}`;
+  $('i-src').textContent = n.source ? '⌘ ' + n.source : '⌘ (no source file)';
+  const nb = [...new Set(ADJ[i])].sort((a,b) => NODES[b].deg - NODES[a].deg);
+  $('links').innerHTML = `<div class="lbl">FOLLOW THE PATH — ${nb.length} LINKED</div>` +
+    nb.map(j => `<button class="link" data-i="${j}">${esc(NODES[j].label)}<br><i>${NODES[j].type} · ${NODES[j].deg} links</i></button>`).join('');
+  $('links').querySelectorAll('.link').forEach(b =>
+    b.onclick = () => select(+b.dataset.i, true));
+  $('info').classList.add('show');
+
+  ring.position.set(...n.p); ring.scale.setScalar(n.r*1.9); ring.visible = true;
+
+  const hp = new Float32Array(nb.length*6);
+  nb.forEach((j,k)=>{ hp.set(n.p,k*6); hp.set(NODES[j].p,k*6+3); });
+  hiLines.geometry.dispose();
+  const hg = new THREE.BufferGeometry();
+  hg.setAttribute('position', new THREE.BufferAttribute(hp,3));
+  hiLines.geometry = hg;
+
+  if(moveCamera) flyTo(n.p);
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* glide the camera to a node — this is what makes following a path feel like travel */
+let glide = null;
+function flyTo(p){
+  glide = { from: target.clone(), to: new THREE.Vector3(...p), t: 0,
+            fromD: dist, toD: Math.max(4.5, Math.min(dist, 9)) };
+}
+
+/* ── search ────────────────────────────────────────────────────────── */
+$('search').addEventListener('keydown', e => {
+  if(e.key !== 'Enter') return;
+  const q = $('search').value.trim().toLowerCase();
+  if(!q) return;
+  let best = -1, score = 1e9;
+  NODES.forEach((n,i) => {
+    const l = n.label.toLowerCase();
+    const at = l.indexOf(q);
+    if(at >= 0 && at < score){ score = at; best = i; }
+  });
+  if(best >= 0) select(best, true);
+});
+$('resetbtn').onclick = () => {
+  target.set(0,0,0); dist = 26; yaw = 0.6; pitch = 0.35; applyOrbit();
+  ring.visible = false; $('info').classList.remove('show'); selected = -1;
+  hiLines.geometry.dispose(); hiLines.geometry = new THREE.BufferGeometry();
+};
+
+/* ── loop ──────────────────────────────────────────────────────────── */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), .05);
+  if(glide){
+    glide.t = Math.min(1, glide.t + dt*1.7);
+    const e = 1 - Math.pow(1-glide.t, 3);
+    target.lerpVectors(glide.from, glide.to, e);
+    dist = glide.fromD + (glide.toD - glide.fromD)*e;
+    applyOrbit();
+    if(glide.t >= 1) glide = null;
+  }
+  if(fly){
+    const speed = (keys.has('ShiftLeft') ? 26 : 9) * dt;
+    const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+    const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+    vel.set(0,0,0);
+    if(keys.has('KeyW')) vel.add(fwd);
+    if(keys.has('KeyS')) vel.sub(fwd);
+    if(keys.has('KeyD')) vel.add(right);
+    if(keys.has('KeyA')) vel.sub(right);
+    if(keys.has('KeyE')) vel.y += 1;
+    if(keys.has('KeyQ')) vel.y -= 1;
+    if(vel.lengthSq()) target.addScaledVector(vel.normalize(), speed);
+    applyOrbit();
+  }
+  if(ring.visible) ring.rotation.y += dt*1.1, ring.rotation.x += dt*.6;
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

@@ -26,6 +26,14 @@
 # --- command deck ---
 !Awen Command Deck.py
 !awen_deck.html
+!awen_map.html
+!build_neural_map.py
+
+# --- vendored libs (offline-proof) ---
+!vendor/
+!vendor/*.js
+# NB: docs/neural_map.json is generated from the local corpus and stays local —
+# build_neural_map.py regenerates it from whatever vault the user has.
 
 # --- corpus tooling ---
 !ingest_memory.py
