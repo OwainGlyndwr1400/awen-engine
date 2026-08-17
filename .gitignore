@@ -39,6 +39,10 @@
 !ingest_memory.py
 !ingest_books.py
 !rebuild_gnosis.py
+# add_docs.py appends a few documents through the engine's own /add_entry, so
+# the ledger and index stay in step. ingest_memory.py rewrites a lane wholesale
+# and needs a rebuild after it; this is the tool for "I wrote a new paper".
+!add_docs.py
 
 # --- instruments (v2) ---
 # The BUILDERS ship; their OUTPUT never does. atlas.json / regulus_corridor.json
@@ -50,6 +54,17 @@
 !build_atlas.py
 !build_regulus_corridor.py
 !runtime_vs_spec.py
+
+# --- the library ---
+# papers.json is the ONE generated artifact that ships, and it is the exact
+# opposite of the atlas: it is derived entirely from a PUBLIC bibliography, not
+# from the corpus. build_papers.py scrubs the operator's ngrok tunnel host and
+# drive links before writing it, and refuses to report success if either
+# survives. Whitelisted BY NAME on purpose — do not turn this into !docs/*.json,
+# which would drag atlas.json and neural_map.json out with it.
+!build_papers.py
+!awen_papers.html
+!docs/papers.json
 
 # --- launchers ---
 !Start Awen Grid.bat

@@ -54,9 +54,26 @@ RE_PAGE_LINE = re.compile(r"^\s*PAGE\s+\d+\s*$", re.IGNORECASE)
 RE_BOILERPLATE = re.compile(r"^(#\s*🌀 Awen Grid Archive:|\*\*Source Location:\*\*)")
 
 
+# Markdown exported from Docs/Notion inlines images as base64 data URIs. One
+# such paper measured 1.47 MB of which 98.8% was PNG bytes — it would have
+# produced 664 chunks of pure base64 and 13 of actual paper, all embedded into a
+# lane that dreams. The quality gate did not catch it: base64 is long, varied,
+# and letter-rich, so it looks like dense prose to every heuristic that matters.
+# Strip it before anything else sees it.
+RE_DATA_URI = re.compile(r"data:[a-z]+/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+", re.I)
+RE_B64_RUN = re.compile(r"[A-Za-z0-9+/]{200,}={0,2}")
+
+
+def strip_binary_blobs(text: str) -> str:
+    """Remove inlined base64 payloads, leaving a marker so the prose still reads."""
+    text = RE_DATA_URI.sub(" [image] ", text)
+    return RE_B64_RUN.sub(" [binary] ", text)
+
+
 def clean_text(raw: str) -> str:
     text = fix_mojibake(raw)
     text = RE_FRONTMATTER.sub("", text)
+    text = strip_binary_blobs(text)
     text = text.replace("\r\n", "\n").replace("�", "")
     # Collapse OCR letter-spacing: "T H E   G R A N D" -> "THE GRAND"
     text = RE_LETTERSPACED.sub(lambda m: re.sub(r" +", "", m.group(0)), text)

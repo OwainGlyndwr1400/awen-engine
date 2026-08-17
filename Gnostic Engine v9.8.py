@@ -1146,6 +1146,12 @@ class JointMemoryBridge:
                         if key in seen:
                             continue
                         seen.add(key)
+                    # Rank WITHIN its own lane. Raw scores are not comparable
+                    # across lanes — a cosine lane yields pseudo-distances near
+                    # -0.77 while an L2 lane yields +0.3..1.0, so a global sort
+                    # by distance puts every cosine hit above every L2 hit
+                    # regardless of relevance. Rank is metric-agnostic.
+                    res["lane_rank"] = sum(1 for c in chosen if c["source"] == lane)
                     chosen.append(res); got += 1
                 return got
 
@@ -1164,7 +1170,13 @@ class JointMemoryBridge:
                 if not progressed:          # every lane exhausted
                     break
 
-            chosen.sort(key=lambda r: r["distance"])
+            # Interleave by within-lane rank, tie-broken by lane weight: each
+            # lane's best material appears early, so the prompt opens with the
+            # strongest hit from every lane rather than one lane's entire quota.
+            lane_order = {ln: i for i, ln in enumerate(
+                sorted(lanes, key=lambda l: -float(LANE_WEIGHTS.get(l, 0))))}
+            chosen.sort(key=lambda r: (r.get("lane_rank", 0),
+                                       lane_order.get(r["source"], 99)))
             if lanes:
                 tally = {ln: sum(1 for r in chosen if r["source"] == ln) for ln in lanes}
                 print(f"🔍 Retrieval — quota {quota} → returned {tally} "

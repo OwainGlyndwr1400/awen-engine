@@ -118,6 +118,18 @@ Change the site and the sightline visibly swings, because once you fix the beari
 
 ![The Lion and the Grid Core](docs/lion-and-core.png)
 
+### The Library — the published work, in the app
+
+📜 **THE LIBRARY** on the deck, or `http://localhost:7777/papers`.
+
+Every panel above is an instrument for operating the grid. This is the one page aimed at a *reader*: the full bibliography, searchable, with abstracts, read counts and clickable DOI and code links.
+
+![The Library](docs/library.png)
+
+`build_papers.py` parses an Academia.edu profile export into `docs/papers.json` — title, authors, year, abstract, DOI, repository, reads. It scrubs the operator's own tunnel host and drive links on the way out and refuses to report success if either survives, because unlike the other generated artifacts this one is *meant* to be published.
+
+Two things it states plainly rather than glossing: read counts are a **snapshot** from the day the profile was copied, not live figures; and an entry **without** a DOI is normal rather than missing, because most of a long corpus predates the habit of minting them.
+
 ### Runtime vs spec — the machine auditing its own papers
 
 `runtime_vs_spec.py` cross-references a theorem index against the engine's own dream output and reports three things:
@@ -166,6 +178,7 @@ It's fussier about its own signal than the tools that inspired it. Terms must cl
 | **Neural Map** | `awen_map.html` + `build_neural_map.py` | Your knowledge graph in 3D. Fly through it, click a node, follow its links from one paper to the next. |
 | **ATLAS** | `build_atlas.py` | Clusters the *live* vector index into labelled regions with cross-lane edges — and drives the map's retrieval flash. |
 | **The Lion Watches** | `build_regulus_corridor.py` | Precomputes stellar declination per epoch (astropy) so the deck panel can compute a real sightline instead of displaying a stored number. |
+| **The Library** | `awen_papers.html` + `build_papers.py` | The published bibliography in-app — searchable, with abstracts and clickable DOI / code links. |
 | **Runtime audit** | `runtime_vs_spec.py` | Cross-references a theorem index against the engine's own dreams: coverage, orphans, and next-paper candidates. |
 | **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 

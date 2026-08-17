@@ -148,6 +148,26 @@ def api_graph():
     return send_file(NEURAL_MAP, mimetype="application/json")
 
 
+PAPERS_HTML = ROOT / "awen_papers.html"
+PAPERS = ROOT / "docs" / "papers.json"
+
+
+@app.route("/papers")
+def papers_page():
+    return send_file(PAPERS_HTML)
+
+
+@app.route("/api/papers")
+def api_papers():
+    """The published bibliography. Unlike the atlas, this artifact is derived
+    entirely from public work and is safe to ship — build_papers.py scrubs the
+    operator's tunnel host and drive links on the way out."""
+    if not PAPERS.exists():
+        return jsonify({"error": "library not built",
+                        "hint": "run: py -3.11 build_papers.py"}), 404
+    return send_file(PAPERS, mimetype="application/json")
+
+
 ATLAS = ROOT / "docs" / "atlas.json"
 
 

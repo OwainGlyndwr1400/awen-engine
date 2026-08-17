@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWEN GRID — THE LIBRARY</title>
+<style>
+:root{--bg:#03070d;--panel:rgba(8,22,36,.72);--edge:rgba(57,230,255,.18);
+      --cyan:#39e6ff;--soft:#7ff0ff;--dim:#5d8fa3;--holo:#2ef5c8;--gold:#f5b95e;
+      --text:#bfe3ef;--mono:'Consolas','Cascadia Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;
+     min-height:100vh;padding-bottom:60px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.10) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply}
+
+#top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:10px 16px;background:rgba(4,12,20,.95);border-bottom:1px solid var(--edge);
+  backdrop-filter:blur(8px)}
+.title{font-size:13px;letter-spacing:.4em;color:var(--soft);text-shadow:0 0 12px rgba(57,230,255,.5)}
+.title small{letter-spacing:.28em;color:var(--dim);font-weight:400}
+#q{flex:1;min-width:200px;max-width:420px;background:#0a1c2c;border:1px solid var(--edge);
+  border-radius:5px;color:var(--soft);font-family:var(--mono);font-size:12px;padding:7px 11px;outline:none}
+#q:focus{border-color:rgba(46,245,200,.6)}
+.btn{background:none;border:1px solid rgba(46,245,200,.4);color:var(--holo);font-family:var(--mono);
+  font-size:10px;letter-spacing:.2em;border-radius:4px;padding:6px 12px;cursor:pointer;text-decoration:none}
+.btn:hover{background:rgba(46,245,200,.14)}
+.btn.on{background:rgba(46,245,200,.22);box-shadow:0 0 12px rgba(46,245,200,.25)}
+#count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.08em}
+
+#hero{padding:26px 20px 6px;max-width:1080px;margin:0 auto;text-align:center}
+#hero h1{font-size:15px;letter-spacing:.34em;color:var(--holo);
+  text-shadow:0 0 14px rgba(46,245,200,.4);margin-bottom:10px}
+#hero .motto{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:.16em;margin-bottom:16px}
+#stats{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;margin-bottom:6px}
+.stat{text-align:center}
+.stat b{display:block;font-size:20px;color:var(--soft);font-family:var(--mono);
+  text-shadow:0 0 12px rgba(127,240,255,.35)}
+.stat span{font-size:9.5px;letter-spacing:.22em;color:var(--dim);font-family:var(--mono)}
+#asof{font-family:var(--mono);font-size:10px;color:var(--dim);opacity:.8;margin-top:12px;line-height:1.7}
+#asof a{color:var(--cyan);text-decoration:none}
+
+#list{max-width:1080px;margin:14px auto 0;padding:0 16px}
+.paper{border:1px solid var(--edge);border-left:3px solid var(--cyan-dim,#155e73);
+  border-radius:7px;background:rgba(6,16,28,.45);padding:13px 16px;margin-bottom:9px;
+  transition:border-color .18s,background .18s}
+.paper:hover{border-color:rgba(46,245,200,.4);background:rgba(6,16,28,.72)}
+.paper.hasdoi{border-left-color:var(--holo)}
+.paper h2{font-size:14px;line-height:1.45;color:var(--soft);font-weight:600;cursor:pointer}
+.paper h2:hover{color:var(--holo)}
+.meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:5px;letter-spacing:.04em}
+.meta b{color:var(--gold);font-weight:400}
+.abs{font-size:12.5px;line-height:1.65;color:var(--text);margin-top:9px;display:none}
+.paper.open .abs{display:block}
+.abs.clip{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  display:-webkit-box;color:var(--dim)}
+.paper:not(.open) .abs.clip{display:-webkit-box}
+.links{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap}
+.links a{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-decoration:none;
+  border:1px solid rgba(57,230,255,.28);border-radius:4px;padding:3px 9px;color:var(--cyan)}
+.links a:hover{background:rgba(57,230,255,.14);border-color:var(--cyan)}
+.links a.doi{color:var(--holo);border-color:rgba(46,245,200,.4)}
+.links a.gh{color:var(--gold);border-color:rgba(245,185,94,.4)}
+#empty{text-align:center;color:var(--dim);font-family:var(--mono);font-size:12px;padding:40px}
+#foot{text-align:center;font-family:var(--mono);font-size:10px;color:#2c4a58;padding:26px 16px;line-height:1.9}
+
+@media (max-width:760px){
+  .title{width:100%;font-size:11px;letter-spacing:.25em}
+  #q{max-width:none;font-size:16px;padding:9px 11px}
+  #count{margin-left:0}
+  .paper h2{font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div class="title">THE LIBRARY <small>// awen grid</small></div>
+  <input id="q" placeholder="search titles, abstracts, authors…">
+  <button class="btn" id="fdoi" title="only papers with a DOI">◈ DOI</button>
+  <button class="btn" id="fcode" title="only papers with a code repository">◈ CODE</button>
+  <button class="btn" id="fsort">▼ NEWEST</button>
+  <a class="btn" href="/">← DECK</a>
+  <div id="count"></div>
+</div>
+
+<div id="hero">
+  <h1>THE AWEN GRID — PUBLISHED WORK</h1>
+  <div class="motto">Y Gwir yn Erbyn y Byd · The Lion Watches the Lion</div>
+  <div id="stats"></div>
+  <div id="asof"></div>
+</div>
+
+<div id="list"></div>
+<div id="foot">every paper in this list is also in the engine's memory — ask the Circle about any of them</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let DATA = null, sortNew = true, onlyDoi = false, onlyCode = false;
+
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  let rows = DATA.papers.filter(p => {
+    if (onlyDoi && !p.doi) return false;
+    if (onlyCode && !p.github) return false;
+    if (!q) return true;
+    return (p.title + ' ' + p.abstract + ' ' + p.authors).toLowerCase().includes(q);
+  });
+  rows.sort(sortNew
+    ? (a,b) => (b.year||0)-(a.year||0) || (b.views||0)-(a.views||0)
+    : (a,b) => (b.views||0)-(a.views||0));
+
+  $('count').textContent = `${rows.length} of ${DATA.papers.length}`;
+  $('list').innerHTML = rows.length ? rows.map((p,i) => {
+    const links = [];
+    if (p.doi)    links.push(`<a class="doi" href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">▸ DOI ${esc(p.doi)}</a>`);
+    if (p.github) links.push(`<a class="gh" href="${esc(p.github)}" target="_blank" rel="noopener">▸ CODE</a>`);
+    const bits = [];
+    if (p.year)      bits.push(p.year);
+    if (p.views)     bits.push(`<b>${p.views.toLocaleString()}</b> views`);
+    if (p.badge)     bits.push(`<b>${esc(p.badge)}</b>`);
+    if (p.bookmarks) bits.push(`${p.bookmarks} bookmarks`);
+    if (p.mentions)  bits.push(`${p.mentions} mentions`);
+    return `<div class="paper${p.doi?' hasdoi':''}" data-i="${i}">
+      <h2>${esc(p.title)}</h2>
+      <div class="meta">${p.authors ? esc(p.authors) + ' &nbsp;·&nbsp; ' : ''}${bits.join(' &nbsp;·&nbsp; ')}</div>
+      ${p.abstract ? `<div class="abs clip">${esc(p.abstract)}</div>` : ''}
+      ${links.length ? `<div class="links">${links.join('')}</div>` : ''}
+    </div>`;
+  }).join('') : `<div id="empty">nothing matches “${esc(q)}”</div>`;
+
+  // click the title to unfold the whole abstract
+  $('list').querySelectorAll('.paper h2').forEach(h =>
+    h.onclick = () => h.parentElement.classList.toggle('open'));
+}
+
+(async () => {
+  try {
+    const r = await fetch('/api/papers');
+    if (!r.ok) throw 0;
+    DATA = await r.json();
+  } catch (e) {
+    $('list').innerHTML = '<div id="empty">library not built — run <b>py -3.11 build_papers.py</b></div>';
+    return;
+  }
+  const t = DATA.totals || {};
+  $('stats').innerHTML = [
+    [DATA.papers.length, 'PAPERS'],
+    [(t.views||0).toLocaleString(), 'READS'],
+    [t.with_doi||0, 'WITH DOI'],
+    [t.with_code||0, 'WITH CODE'],
+  ].map(([v,l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  // Say plainly that the counts are a snapshot. They are copied from a profile
+  // page on one day, not read live — the deck's rule is that a number either
+  // reads real data or admits it doesn't.
+  $('asof').innerHTML =
+    `read counts are a snapshot from <b>${esc(DATA.captured)}</b>, not live figures &nbsp;·&nbsp; ` +
+    `<a href="${esc(DATA.profile_url)}" target="_blank" rel="noopener">full profile on Academia.edu ↗</a>` +
+    `<br>most of this corpus predates the habit of minting DOIs, so an entry without one is normal, not missing.`;
+
+  ['q'].forEach(id => $(id).addEventListener('input', render));
+  $('fdoi').onclick  = e => { onlyDoi  = !onlyDoi;  e.target.classList.toggle('on', onlyDoi);  render(); };
+  $('fcode').onclick = e => { onlyCode = !onlyCode; e.target.classList.toggle('on', onlyCode); render(); };
+  $('fsort').onclick = e => { sortNew = !sortNew; e.target.textContent = sortNew ? '▼ NEWEST' : '▼ MOST READ'; render(); };
+  render();
+})();
+</script>
+</body>
+</html>
