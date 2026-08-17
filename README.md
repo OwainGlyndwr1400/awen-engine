@@ -178,6 +178,8 @@ Resumable — it batches, saves as it goes, and picks up where it left off. Dele
 
 Your research as a walkable 3D graph — every node a document or concept, every edge a real link between them. Built from a graphify pass over your vault, or from Obsidian `[[wikilinks]]`.
 
+![The Neural Map](docs/neural-map.png)
+
 - **Click a node** → its type, connection count, source file, and *every linked node as a button*
 - **Click a link** → the camera glides there and opens it. Each click is a step along an edge, so following a thread through your own corpus feels like travelling rather than searching
 - **Search** jumps to the best match; hubs are physically larger; types are colour-coded
