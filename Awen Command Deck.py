@@ -269,12 +269,26 @@ def _grim_paths():
     return d, d / "Gnostic_Logs_v7" / "latest.json", d / "Gnostic_Logs_v7" / "rhc_seismic_ledger.jsonl"
 
 
+def _predictions(grim_dir: Path):
+    """The open predictions board — falsifiable claims with their kill
+    conditions. Shared artefact: the Grimoire renders it each morning, the
+    deck shows the same file. Not a gauge; a scoreboard."""
+    p = grim_dir / "predictions.json"
+    d = read_json(p) or {}
+    out = []
+    for pr in d.get("predictions") or []:
+        out.append({k: pr.get(k) for k in
+                    ("id", "title", "value", "observe", "falsifies_if", "scale", "status", "countdown")})
+    return out
+
+
 @app.route("/api/grimoire")
 def api_grimoire():
-    _, latest, ledger_path = _grim_paths()
+    grim_dir, latest, ledger_path = _grim_paths()
     snap = read_json(latest)
     if not snap:
-        return jsonify({"status": "none", "running": GRIMOIRE_RUN["busy"], "error": GRIMOIRE_RUN["last"]})
+        return jsonify({"status": "none", "running": GRIMOIRE_RUN["busy"],
+                        "error": GRIMOIRE_RUN["last"], "predictions": _predictions(grim_dir)})
 
     out = {"status": "ok", "running": GRIMOIRE_RUN["busy"], "error": GRIMOIRE_RUN["last"],
            "timestamp": snap.get("timestamp"), "location": (snap.get("location") or {}).get("name"),
@@ -312,6 +326,7 @@ def api_grimoire():
     out["open_watches"] = [w for w in watches
                            if w.get("id") not in resolved_ids and str(w.get("window_end", "")) > now_iso]
     out["recent_verdicts"] = resolutions[-5:]
+    out["predictions"] = _predictions(grim_dir)
     return jsonify(out)
 
 

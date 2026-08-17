@@ -191,6 +191,11 @@ select{background:#0a1c2c; color:var(--cyan-soft); border:1px solid var(--panel-
   box-shadow:0 0 8px rgba(57,230,255,.5); transition:width .8s}
 .bar.warn i{background:linear-gradient(90deg,#7a5b22,var(--gold))}
 #band{font-size:10.5px; color:var(--gold); font-family:var(--mono); line-height:1.5}
+.pred{background:rgba(6,16,28,.5); border:1px solid rgba(57,230,255,.12); border-radius:5px;
+  padding:6px 8px; margin-bottom:5px; cursor:pointer}
+.pred:hover{border-color:rgba(57,230,255,.35)}
+.pred .pdetail{display:none; font-size:10px; line-height:1.5}
+.pred.open .pdetail{display:block}
 canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
 #urgbars{display:flex; align-items:flex-end; gap:3px; height:34px; margin:2px 0 4px}
 #urgbars i{flex:1; background:linear-gradient(180deg,var(--red),#5a1b28); min-height:2px;
@@ -305,6 +310,8 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
           color:var(--holo);font-size:8.5px;letter-spacing:.16em;border-radius:3px;padding:1px 7px;
           cursor:pointer;font-family:var(--mono)">READ LAND</button></div>
       <div id="grimrows"><div class="srow"><span style="color:var(--dim)">no reading loaded</span></div></div>
+      <div class="sdiv">OPEN PREDICTIONS <span id="predcount" style="float:right;letter-spacing:0;color:var(--dim)"></span></div>
+      <div id="predrows"></div>
       <div class="sdiv">SEISMIC ENGINE · CIRCUIT</div>
       <div class="srow"><span>⚡ SPARK (CME_I)</span><b id="v-cme">—</b></div>
       <div class="bar"><i id="b-cme" style="width:0%"></i></div>
@@ -913,6 +920,32 @@ function applyEngine(e,src){
   rs.style.color=R>=70?'var(--red)':R>=50?'var(--gold)':R>=25?'var(--cyan-soft)':'var(--holo)';
   return {R,band};
 }
+/* Open predictions — claims with their kill conditions. Click to unfold what
+   would falsify each one. A scoreboard, not a gauge. */
+const PRED_COLOR={open:'var(--cyan-soft)',partial:'var(--gold)',
+                  confirmed:'var(--holo)',falsified:'var(--red)'};
+function renderPredictions(preds){
+  if(!preds||!preds.length){ $('predrows').innerHTML=
+    '<div class="srow"><span style="color:var(--dim)">predictions.json not found</span></div>';
+    $('predcount').textContent=''; return; }
+  const tally={};
+  preds.forEach(p=>{ tally[p.status||'open']=(tally[p.status||'open']||0)+1; });
+  $('predcount').textContent=Object.entries(tally).map(([k,v])=>`${v} ${k}`).join(' · ');
+  $('predrows').innerHTML=preds.map((p,i)=>{
+    const col=PRED_COLOR[p.status]||'var(--dim)';
+    return `<div class="pred" onclick="this.classList.toggle('open')" style="border-left:3px solid ${col}">
+      <div style="display:flex;gap:6px;align-items:baseline">
+        <span style="color:${col};font-family:var(--mono);font-size:9px;letter-spacing:.16em">${esc((p.status||'open').toUpperCase())}</span>
+        <span style="font-size:11px;line-height:1.35">${esc(p.title)}</span></div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--holo);margin-top:3px">${esc(p.value||'')}</div>
+      <div class="pdetail">
+        <div style="margin-top:5px;color:var(--dim)"><b style="color:var(--cyan)">observe</b> ${esc(p.observe||'')}</div>
+        <div style="margin-top:4px;color:var(--dim)"><b style="color:var(--red)">falsifies if</b> ${esc(p.falsifies_if||'')}</div>
+        <div style="margin-top:4px;color:var(--dim)"><b>scale</b> ${esc(p.scale||'')}</div>
+      </div></div>`;
+  }).join('');
+}
+
 async function pollGrimoire(){
   try{
     const g=await (await fetch('/api/grimoire')).json();
@@ -948,6 +981,7 @@ async function pollGrimoire(){
       rows.push(`<div class="srow"><span style="color:var(--red)">◉ OPEN WATCH</span><b style="color:var(--red)">M≥${w.criterion_mag} → ${String(w.window_end).slice(5,16)}</b></div>`);
     }
     $('grimrows').innerHTML=rows.join('');
+    renderPredictions(g.predictions);
     /* authoritative engine takes over the circuit */
     const e=(g.rhc||{}).engine;
     if(e){
