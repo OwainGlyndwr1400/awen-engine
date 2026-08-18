@@ -25,6 +25,7 @@ ingest_memory.py runs.
 import argparse
 import json
 import shutil
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -36,11 +37,33 @@ ROOT = Path(__file__).resolve().parent
 ENGINE = "http://127.0.0.1:5000"
 
 
-def post(path, payload, timeout=180):
-    req = urllib.request.Request(ENGINE + path, data=json.dumps(payload).encode("utf-8"),
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+def post(path, payload, timeout=600, retries=4):
+    """POST with patience and retries.
+
+    A bulk ingest competes with the dream cycle for the engine's db_lock, and a
+    dream holds that lock across its LLM synthesis call — which has a 240s
+    timeout of its own. A client that waits only 180s therefore gives up on a
+    lock the engine is still legitimately holding, and the whole run dies
+    mid-file. Wait longer than the dream can possibly take, and retry rather
+    than abort: /add_entry is idempotent (hash-deduped), so a retry after a
+    partial success simply reports the chunk as already present.
+    """
+    last = None
+    for attempt in range(retries):
+        req = urllib.request.Request(
+            ENGINE + path, data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            last = e
+            if attempt < retries - 1:
+                wait = 5 * (attempt + 1)
+                print(f"    ... engine busy ({type(e).__name__}), retry in {wait}s",
+                      flush=True)
+                time.sleep(wait)
+    raise last
 
 
 def main() -> int:
@@ -53,6 +76,11 @@ def main() -> int:
                     help="subfolder under Memory/ to copy originals into")
     ap.add_argument("--commit", action="store_true",
                     help="actually write; without this it is a dry run")
+    ap.add_argument("--no-copy", action="store_true",
+                    help="do not copy originals into Memory/. Use for large "
+                         "corpora already living somewhere stable — copying a "
+                         "434 MB book library just to satisfy a future rebuild "
+                         "is not worth the disk.")
     ap.add_argument("--node", default="lumos", help="admin node used for the write")
     args = ap.parse_args()
 
@@ -99,14 +127,15 @@ def main() -> int:
         good = [c for c in chunks if im.passes_quality_gate(c)]
         rejected += len(chunks) - len(good)
         grand += len(good)
-        print(f"  {path.name[:64]}")
+        print(f"  {path.name[:64]}", flush=True)
         print(f"    {len(text):,} chars -> {len(chunks)} chunks, {len(good)} pass the gate")
 
         if not args.commit:
             continue
 
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dest_dir / path.name)
+        if not args.no_copy:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest_dir / path.name)
 
         a = d = 0
         for c in good:
@@ -127,7 +156,7 @@ def main() -> int:
                 return 1
         added += a
         dupes += d
-        print(f"    added {a}, already present {d}")
+        print(f"    added {a}, already present {d}", flush=True)
 
     print(f"\n{'-'*58}")
     print(f"  files            {len(files)}")

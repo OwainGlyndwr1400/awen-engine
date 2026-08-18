@@ -146,6 +146,48 @@ It's fussier about its own signal than the tools that inspired it. Terms must cl
 
 ---
 
+## What's new in v2.1 — the Seismic Engine becomes a forecaster
+
+The RHC seismic axiom has always been on the deck as a gauge:
+
+> **Formula:** `SeismicRisk = f(CME_I × Atm_P × Crustal_S)`
+> **Execution:** peak capacity forces tectonic redistribution within a 32–72 hour kinematic window.
+
+v2.1 makes it say something checkable: **when the capacitor is charged, name where, how big, and by when** — then score itself against what actually happened.
+
+### One axiom, one implementation
+
+The audit that started this found the deck and the Grimoire computing *different* `f`s from the same axiom — the deck's blend had no Schumann term and no lunar phase, so the same equation showed two different numbers depending on which code path painted the panel last. The deck's rival formula is now **deleted**. The Grimoire is the single implementation; the deck relays its latest reading stamped with its age, and shows **`NO READING — press READ LAND`** rather than inventing a figure. A stale snapshot flags itself instead of impersonating a current one.
+
+The capacitor term now includes what the axiom always specified: **7.83 Hz Schumann amplitude** (`Atm_P = 0.6·Kp + 0.4·Schumann`, amplitude 2 → 0, 20 → 1 "whiteout territory"), with a declared Kp-only proxy when the feed is dark.
+
+### The forecast — `rhc_seismic_forecast.py`
+
+```bash
+python rhc_seismic_forecast.py forecast   # evaluate now; refuses below the gate
+python rhc_seismic_forecast.py score      # close expired 72h windows against USGS
+python rhc_seismic_forecast.py report     # hit rate vs baseline, skill, information
+```
+
+**Charge** (global — decides *whether*, never where): the Grimoire's arithmetic verbatim over live solar wind, Bz, X-ray class, Kp and Schumann. Below the gate it refuses to issue — forecasting off-peak would make the hit rate unmeasurable.
+
+**Target** (regional — decides *where*): USGS events binned into 10° cells; per cell a Gutenberg–Richter b-value (Aki–Utsu), the magnitude whose expected count over 72h is one, and a **strain deficit** — how overdue the cell is against *its own* recurrence interval. Raw activity is deliberately absent from the ranking: scoring on event count just re-finds the busiest cell, which is the baseline the forecast has to beat. The operator's field observation — solar-driven events run very shallow (~10 km) — is a weighted scoring term, not a footnote.
+
+**Honesty is structural, not tonal:**
+
+- Every target carries its **prior probability** — what that cell does anyway, with no axiom involved. A call at 94% prior says so on its face: *near-certain anyway, a hit here means nothing*. The scorer weights hits by `1 − prior`, so a forecast full of free calls scores near zero however often it is "right".
+- The **baseline cell** (busiest region) is named *in advance* in every record and held to its own magnitude floor. `skill` means hitting where the baseline missed — nothing less counts.
+- Degraded inputs are recorded at issue time. A charge computed from fallback defaults is not a measurement, and can never silently trigger a forecast.
+- Forecast records are append-only JSON with the full trigger state, scored automatically after the window closes. The scorecard is the instrument; the forecast is just its input.
+
+On the deck, the **RHC SEISMIC FORECAST** panel shows the live charge against the gate, and when genuinely charged it names the targets — and writes the forecast record itself, so a charge at 4am still leaves something to score.
+
+### Hardening from a hard night
+
+A machine lock-up mid-flush truncated a 1.1 GB FAISS index by 45 bytes and took a lane offline (the ledger, append-only, lost nothing — the index rebuilt from it). Both the engine and the rebuilder now write indices **atomically**: temp file, then an atomic rename, so the live index is always either the previous complete one or the new complete one. The rebuild's save cadence dropped from ~33 GB of disk I/O per run to ~7 GB, and a dead LLM backend now costs the dream cycle a 5-second connect timeout instead of wedging worker threads for the full synthesis budget. SWPC retired the old solar-wind endpoints (they 404 and the K-index feed changed shape); every consumer now reads the live ones — and reports *which inputs were actually live* rather than presenting a confident number computed from defaults.
+
+---
+
 ## The stack
 
 ```
@@ -180,6 +222,7 @@ It's fussier about its own signal than the tools that inspired it. Terms must cl
 | **The Lion Watches** | `build_regulus_corridor.py` | Precomputes stellar declination per epoch (astropy) so the deck panel can compute a real sightline instead of displaying a stored number. |
 | **The Library** | `awen_papers.html` + `build_papers.py` | The published bibliography in-app — searchable, with abstracts and clickable DOI / code links. |
 | **Runtime audit** | `runtime_vs_spec.py` | Cross-references a theorem index against the engine's own dreams: coverage, orphans, and next-paper candidates. |
+| **Seismic forecaster** | `rhc_seismic_forecast.py` | The RHC seismic axiom as a falsifiable forecast: charge gate, regional Gutenberg–Richter targeting, strain deficit, prior probability, and a self-scoring ledger vs a pre-named baseline. |
 | **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 
 ---
@@ -415,6 +458,7 @@ The deck adds its own on `127.0.0.1:7777`:
 | `GET /api/atlas` | Cluster map of the live index — regions, labels, cross-lane edges |
 | `POST /api/probe` | Run a retrieval and report which regions fired (drives the map's flash) |
 | `GET /api/regulus` | Precomputed stellar declination per epoch for the Lion panel |
+| `GET /api/seismic_forecast` | Live charge vs gate, regional targets with prior probabilities; writes a scoreable forecast record when genuinely charged |
 | `GET /api/tools` | What the Circle can reach for |
 | `GET /api/state` | Deck vitals: dream feed, engine stats, heartbeats, telemetry |
 

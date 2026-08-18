@@ -168,6 +168,71 @@ def api_papers():
     return send_file(PAPERS, mimetype="application/json")
 
 
+
+# --- RHC seismic forecast -------------------------------------------------
+# The axiom's own execution clause: peak capacity forces redistribution inside
+# a 32-72h window. The charge term is global and says WHETHER; the regional
+# term says WHERE. Both live in rhc_seismic_forecast.py -- imported rather than
+# reimplemented, because the deck already carried one rival implementation of
+# this axiom and that is exactly how two different answers appeared.
+_FORECAST_CACHE = {"ts": 0.0, "data": None}
+
+
+@app.route("/api/seismic_forecast")
+def api_seismic_forecast():
+    if _FORECAST_CACHE["data"] and time.time() - _FORECAST_CACHE["ts"] < 900:
+        return jsonify(_FORECAST_CACHE["data"])
+    try:
+        import importlib
+        fc = importlib.import_module("rhc_seismic_forecast")
+        importlib.reload(fc)
+        st = fc.charge_state()
+        out = {
+            "charge": st.get("charge"), "cme_i": st.get("cme_i"),
+            "atm_p": st.get("atm_p"), "gate": fc.CHARGE_GATE,
+            "charged": (st.get("charge") or 0) >= fc.CHARGE_GATE,
+            "degraded": st.get("degraded"), "live_inputs": st.get("live_inputs"),
+            "window_h": fc.WINDOW_H, "shallow_km": fc.SHALLOW_KM,
+            "targets": [], "baseline": None,
+        }
+        regions, _total = fc.regional_state()
+        if regions:
+            ranked = sorted(regions.values(), key=fc.readiness, reverse=True)
+            top = [r for r in ranked if r.get("m_expected")][:fc.TOP_N]
+            base = max(regions.values(), key=lambda r: r["events_30d"])
+            out["baseline"] = {"label": base["label"], "events_30d": base["events_30d"]}
+            for r in top:
+                m_low = round(r["m_expected"] - 0.5, 2)
+                out["targets"].append({
+                    "label": r["label"], "cell": r["cell"],
+                    "m_low": m_low, "m_high": round(r["m_expected"] + 0.5, 2),
+                    "readiness": fc.readiness(r),
+                    "strain_deficit": r.get("strain_deficit"),
+                    "shallow_share": r.get("shallow_share"),
+                    "prior_p": fc.prior_probability(r["events_30d"], r["b_value"],
+                                                    r["mc"], m_low, 30, fc.WINDOW_H),
+                })
+        # "Keep an eye out" only works if a genuinely charged state leaves a
+        # scoreable record even when nobody is at a terminal. One open window
+        # at a time; the CLI's `score` command closes it after 72h. Forced and
+        # degraded states never persist — those are not measurements.
+        if out["charged"] and not out.get("degraded") and regions:
+            try:
+                if not fc.has_open_forecast():
+                    rec = fc.build_forecast(st, regions, _total,
+                                            forced=False, issued_by="deck")
+                    if rec:
+                        fc.write_forecast(rec)
+                        out["issued_id"] = rec["id"]
+            except Exception:
+                pass
+
+        _FORECAST_CACHE["data"], _FORECAST_CACHE["ts"] = out, time.time()
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": f"forecast failed: {e}"}), 500
+
+
 ATLAS = ROOT / "docs" / "atlas.json"
 
 
@@ -487,25 +552,31 @@ def api_aether():
     # Every block guards itself: SWPC intermittently serves error objects or
     # non-numeric cells, and one bad feed must not take down the whole reading
     # (quakes, NEOs and the seismic composite are computed further down).
-    plasma = grab("https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json")
-    if isinstance(plasma, list) and len(plasma) > 1:
+    # SWPC retired products/solar-wind/plasma-*.json (404 now). The summary
+    # endpoint is the live equivalent: [{"proton_speed", "time_tag"}].
+    plasma = grab("https://services.swpc.noaa.gov/products/summary/solar-wind-speed.json")
+    if isinstance(plasma, list) and plasma:
         try:
-            row = plasma[-1]
-            out["sw_density"] = float(row[1]) if row[1] else None
-            out["sw_speed"] = float(row[2]) if row[2] else None
-        except (TypeError, ValueError, IndexError, KeyError):
+            out["sw_speed"] = float(plasma[-1]["proton_speed"])
+        except (KeyError, ValueError, TypeError):
             pass
-    mag = grab("https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json")
-    if mag and len(mag) > 1:
+    # Same retirement for mag-*.json; summary gives {"bt", "bz_gsm"}.
+    mag = grab("https://services.swpc.noaa.gov/products/summary/solar-wind-mag-field.json")
+    if isinstance(mag, list) and mag:
         try:
-            out["bz"] = float(mag[-1][3])
-        except Exception:
+            out["bz"] = float(mag[-1]["bz_gsm"])
+        except (KeyError, ValueError, TypeError):
             pass
+    # This feed changed shape: it returns [{"time_tag", "Kp", ...}], not the
+    # list-of-lists it once did. The old index access raised KeyError and the
+    # bare except left Kp pinned to its 2.0 default -- during a real G1 storm
+    # the panel read 22% instead of 59%. Accept both shapes.
     kp = grab("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")
-    if kp and len(kp) > 1:
+    if isinstance(kp, list) and kp:
         try:
-            out["kp"] = float(kp[-1][1])
-        except Exception:
+            last = kp[-1]
+            out["kp"] = float(last["Kp"] if isinstance(last, dict) else last[1])
+        except (KeyError, ValueError, TypeError, IndexError):
             pass
     xr = grab("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json")
     if xr:
@@ -542,8 +613,13 @@ def api_aether():
         except (TypeError, ValueError, KeyError, AttributeError):
             pass
 
-    # NASA NeoWs (DEMO_KEY is fine at our 5-min cache rate)
-    neo = grab("https://api.nasa.gov/neo/rest/v1/feed/today?detailed=false&api_key=DEMO_KEY", timeout=8)
+    # NASA NeoWs. DEMO_KEY is limited to 30 requests/hour and 50/day PER IP —
+    # not per key — so it is shared with every other app on this machine that
+    # also falls back to it. A free registered key raises that to 1,000/hour.
+    # Read from config so the key never sits in source or in the repo.
+    nasa_key = str(cfg().get("nasa_api_key", "")).strip() or "DEMO_KEY"
+    neo = grab("https://api.nasa.gov/neo/rest/v1/feed/today?detailed=false"
+               f"&api_key={nasa_key}", timeout=8)
     if isinstance(neo, dict) and neo.get("near_earth_objects"):
         objs = [o for day in neo["near_earth_objects"].values() for o in day]
         out["neo_count"] = len(objs)
@@ -555,24 +631,37 @@ def api_aether():
         except Exception:
             pass
 
-    # RHC seismic engine â€” deck operationalization of the axiom (f is not
-    # specified in the corpus; this normalized multiplicative blend is ours)
+    # RHC seismic engine â€” the deck no longer computes one. It used to carry
+    # its own blend here (no Schumann, no lunar phase, a single global max
+    # magnitude for Crustal_S), which was a DIFFERENT function from the
+    # Grimoire's, so one axiom showed two numbers depending on which code path
+    # painted the panel last. One implementation now: the Grimoire's. The deck
+    # relays its latest snapshot, stamped with its age, and says "no reading"
+    # rather than inventing a rival figure.
     try:
-        import math as _m
-        v = out.get("sw_speed") or 380.0
-        bz = out.get("bz") or 0.0
-        flux = out.get("xray_flux") or 1e-8
-        kpv = out.get("kp") or 2.0
-        mmax = out.get("quake_max") or 4.0
-        cme = max(0.0, min(1.0, (v - 300) / 500)) * 0.5 \
-            + max(0.0, min(1.0, -bz / 15)) * 0.3 \
-            + max(0.0, min(1.0, (_m.log10(max(flux, 1e-9)) + 8) / 4)) * 0.2
-        atm = max(0.0, min(1.0, kpv / 9))
-        crust = max(0.0, min(1.0, mmax / 8))
-        out["seismic_risk"] = round(100 * cme * (0.4 + 0.6 * atm) * (0.4 + 0.6 * crust), 1)
-        out["cme_i"], out["atm_p"], out["crustal_s"] = round(cme, 3), round(atm, 3), round(crust, 3)
+        _, latest, _ = _grim_paths()
+        snap = read_json(latest)
+        eng = (((snap or {}).get("rhc") or {}).get("engine")
+               or (snap or {}).get("engine") or {})
+        if all(k in eng for k in ("cme_i", "atm_p", "crustal_s", "gridload")):
+            out["cme_i"] = eng["cme_i"]
+            out["atm_p"] = eng["atm_p"]
+            out["crustal_s"] = eng["crustal_s"]
+            out["seismic_risk"] = eng["gridload"]
+            out["band"] = eng.get("band")
+            out["seismic_source"] = "grimoire"
+            try:
+                out["seismic_age_s"] = int(time.time() - latest.stat().st_mtime)
+            except OSError:
+                pass
+        else:
+            out["seismic_source"] = "none"
+        # Feed liveness still reported â€” it describes the raw readouts above.
+        live = [k for k in ("sw_speed", "bz", "kp", "xray_flux") if k in out]
+        out["seismic_inputs_live"] = live
+        out["seismic_degraded"] = len(live) < 3
     except Exception:
-        pass
+        out["seismic_source"] = "none"
 
     AETHER_CACHE["data"] = out
     AETHER_CACHE["ts"] = time.time()

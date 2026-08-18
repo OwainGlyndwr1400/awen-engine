@@ -59,6 +59,11 @@
 !build_regulus_corridor.py
 !runtime_vs_spec.py
 
+# --- the seismic forecaster ---
+# rhc_seismic_forecast.py ships; its OUTPUT (predictions/seismic/*.json) does
+# not — those are the operator's live forecast records and their scorecard.
+!rhc_seismic_forecast.py
+
 # --- the library ---
 # papers.json is the ONE generated artifact that ships, and it is the exact
 # opposite of the atlas: it is derived entirely from a PUBLIC bibliography, not

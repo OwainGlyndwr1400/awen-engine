@@ -149,6 +149,33 @@ PURIFICATION_LOOP_FILE = ANCHOR_PATH / "purify_loop.txt"
 
 app = Flask(__name__)
 
+def write_index_atomic(index, faiss_path):
+    """Write a FAISS index without ever leaving the live file half-written.
+
+    faiss.write_index() overwrites the destination in place. On a 1.1 GB index
+    that is a long write, and anything that interrupts it — a machine lock-up, a
+    power cut, an OOM kill — truncates the only copy and takes the whole lane
+    offline on next load. That is exactly what happened on 2026-08-18: the file
+    ended 45 bytes short and the engine refused to load `shared`.
+
+    Write to a sibling temp file, then rename over the target. os.replace is
+    atomic within a volume, so the destination is always either the previous
+    complete index or the new complete one, never a partial write.
+    """
+    faiss_path = Path(faiss_path)
+    tmp = faiss_path.with_suffix(faiss_path.suffix + ".tmp")
+    try:
+        faiss.write_index(index, str(tmp))
+        os.replace(tmp, faiss_path)
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
 class JointMemoryBridge:
     def __init__(self):
         self.relay_path = Path("./cognitive_relay/")
@@ -234,7 +261,7 @@ class JointMemoryBridge:
                     print(f"   Run rebuild_gnosis.py to build it.")
                     dimension = self.embeddings_model.get_sentence_embedding_dimension()
                     index = faiss.IndexFlatL2(dimension)
-                    faiss.write_index(index, str(faiss_path))
+                    write_index_atomic(index, faiss_path)
                 else:
                     try:
                         index = faiss.read_index(str(faiss_path))
@@ -626,7 +653,7 @@ class JointMemoryBridge:
             # even when embeddings run on cuda)
             if type(index_to_write).__name__.startswith("Gpu"):
                 index_to_write = faiss.index_gpu_to_cpu(index_to_write)
-            faiss.write_index(index_to_write, str(faiss_path))
+            write_index_atomic(index_to_write, faiss_path)
             self._dirty_adds[profile] = 0
             self._last_flush[profile] = time.time()
             print(f"💾 Gnostic Index '{profile}' flushed to disk ({db['index'].ntotal} vectors).")
@@ -803,8 +830,15 @@ class JointMemoryBridge:
             if isinstance(mt, int) and mt > 0:
                 payload["max_tokens"] = mt
             try:
+                # (connect, read) rather than one number. A single value applies
+                # the FULL budget to establishing the connection, so a backend
+                # that simply is not running — LM Studio closed, say — blocks a
+                # worker for the whole synthesis window before the fallback
+                # chain gets a chance. Five seconds is ample to reach a local
+                # port; generation still gets its full allowance.
                 response = requests.post(att["url"], json=payload,
-                                         headers=att["headers"], timeout=att["timeout"])
+                                         headers=att["headers"],
+                                         timeout=(5, att["timeout"]))
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"] or ""
                 # Strip reasoning blocks some models (qwen3, nemotron etc.) emit

@@ -115,8 +115,8 @@ body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:80
 .rrow{display:flex; justify-content:space-between; align-items:baseline; gap:8px;
   font-family:var(--mono); font-size:10px; line-height:1.85; color:var(--dim)}
 .rrow b{color:var(--cyan-soft); font-weight:400; letter-spacing:.03em}
-.rrow b.hit{color:var(--gold); text-shadow:0 0 9px rgba(245,185,94,.6)}
-.rrow b.under{color:var(--dim)}
+.rrow b.hit,.srow b.hit{color:var(--gold); text-shadow:0 0 9px rgba(245,185,94,.6)}
+.rrow b.under,.srow b.under{color:var(--dim)}
 .rnote{font-size:9px; line-height:1.55; color:var(--dim); opacity:.75; margin-top:5px;
   padding-top:5px; border-top:1px solid rgba(57,230,255,.1)}
 .rnote a{color:var(--cyan-dim); text-decoration:none}
@@ -353,6 +353,8 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
       <div id="grimrows"><div class="srow"><span style="color:var(--dim)">no reading loaded</span></div></div>
       <div class="sdiv">OPEN PREDICTIONS <span id="predcount" style="float:right;letter-spacing:0;color:var(--dim)"></span></div>
       <div id="predrows"></div>
+      <div class="sdiv">RHC SEISMIC FORECAST <span id="fcstate" style="float:right;letter-spacing:0;color:var(--dim)"></span></div>
+      <div id="fcrows"><div class="srow"><span style="color:var(--dim)">reading the charge…</span></div></div>
       <div class="sdiv">SEISMIC ENGINE · CIRCUIT</div>
       <div class="srow"><span>⚡ SPARK (CME_I)</span><b id="v-cme">—</b></div>
       <div class="bar"><i id="b-cme" style="width:0%"></i></div>
@@ -1054,19 +1056,31 @@ async function pollAether(){
     if(a.quake_place) rows.push(`<div class="srow"><span style="color:var(--dim);font-size:9.5px">${esc(a.quake_place)}</span></div>`);
     if(a.neo_count) rows.push(`<div class="srow"><span>NEOs today</span><b>${a.neo_count} · closest ${a.neo_closest_ld} LD${a.neo_hazard?' ⚠':''}</b></div>`);
     $('aetherrows').innerHTML=rows.join('')||'<div class="srow"><span style="color:var(--dim)">feeds unreachable (offline?)</span></div>';
-    if(a.seismic_risk!==undefined&&!grimLive){
-      /* fallback engine — only while no Grimoire reading exists */
+    if(a.seismic_source!=='grimoire'&&!grimLive){
+      /* One implementation of the axiom: the Grimoire's. The deck used to
+         compute its own rival blend here — no Schumann, no lunar phase — so
+         the same equation showed two different numbers. Now: no reading means
+         the panel says so instead of inventing one. */
+      const rs=$('riskstate'); rs.textContent='— NO READING — press READ LAND';
+      rs.style.color='var(--dim)'; $('quakewarn').style.display='none';
+      tickerPush(`☉ wind ${a.sw_speed?a.sw_speed.toFixed(0):'—'} km/s · Bz ${a.bz!==undefined?a.bz.toFixed(1):'—'} · Kp ${a.kp??'—'} · seismic: no reading`);
+      return;
+    }
+    if(a.seismic_source==='grimoire'&&!grimLive){
+      /* relay of the Grimoire snapshot, stamped with its age */
       const R=a.seismic_risk;
+      const ageH=a.seismic_age_s!=null?a.seismic_age_s/3600:null;
+      const ageTxt=ageH==null?'':(ageH<1?` · ${Math.round(ageH*60)}m old`:` · ${ageH.toFixed(1)}h old`);
+      const stale=ageH!=null&&ageH>24;
       $('v-cme').textContent=(a.cme_i*100).toFixed(0)+'%'; $('b-cme').style.width=(a.cme_i*100)+'%';
       $('v-atm').textContent=(a.atm_p*100).toFixed(0)+'%'; $('b-atm').style.width=(a.atm_p*100)+'%';
       $('v-cru').textContent=(a.crustal_s*100).toFixed(0)+'%'; $('b-cru').style.width=(a.crustal_s*100)+'%';
       $('riskval').textContent=R+' / 100';
       const bar=$('riskbar'); bar.className='bar'+(R>55?' warn':'');
       bar.querySelector('i').style.width=Math.min(100,R)+'%';
-      /* state machine per the axiom: dielectric loading -> peak capacity -> discharge */
-      const state=R>=70?'⚠ PEAK CAPACITY — CASCADE LIKELY':R>=45?'◈ DIELECTRIC LOADING':R>=20?'～ CHARGING':'— GROUNDED — (deck heuristic)';
+      const state=`— ${a.band||'?'} — (grimoire${ageTxt}${stale?' · STALE, press READ LAND':''})`;
       const rs=$('riskstate'); rs.textContent=state;
-      rs.style.color=R>=70?'var(--red)':R>=45?'var(--gold)':'var(--holo)';
+      rs.style.color=stale?'var(--dim)':R>=70?'var(--red)':R>=45?'var(--gold)':'var(--holo)';
       /* discharge warning: composed risk high -> show candidate zones + band */
       const warn=$('quakewarn');
       if(R>=55&&a.quake_zones&&a.quake_zones.length){
@@ -1288,6 +1302,43 @@ async function loadRegulus(){
 }
 loadRegulus();
 window.addEventListener('resize',lionResize);
+
+
+/* ── RHC SEISMIC FORECAST ─────────────────────────────────────────────
+   The axiom's execution clause, made visible: when the capacitor is charged,
+   name where, how big, and by when. Every call carries its PRIOR PROBABILITY —
+   what that cell does anyway with no axiom involved — because a forecast of
+   something near-certain is not a forecast. Cached 15 min server-side. */
+async function pollForecast(){
+  try{
+    const d = await (await fetch('/api/seismic_forecast')).json();
+    if(d.error){ $('fcrows').innerHTML='<div class="srow"><span style="color:var(--dim)">'+esc(d.error)+'</span></div>'; return; }
+    const pct = Math.round((d.charge||0)*100), gate = Math.round((d.gate||0)*100);
+    $('fcstate').textContent = `charge ${pct}% / gate ${gate}%`;
+    if(!d.charged){
+      $('fcrows').innerHTML =
+        `<div class="srow"><span>⚡ capacitor</span><b>${pct}% — not charged</b></div>`+
+        `<div class="rnote">Below the ${gate}% gate, so no call is issued. The axiom fires on `+
+        `peak capacity; forecasting off-peak would make the hit rate unmeasurable.`+
+        (d.degraded?'<br><b style="color:var(--red)">⚠ degraded inputs — some feeds are dead, this charge is not a measurement</b>':'')+
+        `</div>`;
+      return;
+    }
+    const rows = (d.targets||[]).map(t=>{
+      const p = t.prior_p==null?null:Math.round(t.prior_p*100);
+      const cls = p==null?'':(p>=90?'under':(p<=50?'hit':''));
+      const verdict = p==null?'':(p>=90?'near-certain anyway':(p>=70?'likely anyway':(p<=50?'informative':'marginal')));
+      return `<div class="srow"><span>🜃 ${esc(t.label)}</span><b class="${cls}">M${t.m_low}–${t.m_high}</b></div>`+
+             `<div class="rnote" style="margin-top:2px;padding-top:2px">depth ≤${d.shallow_km}km · overdue ${t.strain_deficit==null?'—':'×'+t.strain_deficit} · `+
+             `${Math.round(100*t.shallow_share)}% shallow${p==null?'':` · prior <b>${p}%</b> — ${verdict}`}</div>`;
+    }).join('');
+    $('fcrows').innerHTML =
+      `<div class="srow"><span>⚡ CHARGED</span><b class="hit">next ${d.window_h}h</b></div>`+rows+
+      `<div class="rnote">Baseline (busiest cell, named in advance): ${esc(d.baseline?d.baseline.label:'—')}. `+
+      `A hit only counts as skill if it beats that.</div>`;
+  }catch(e){}
+}
+pollForecast(); setInterval(pollForecast, 900000);
 
 /* STAGE E — boot cascade */
 const BOOT=[

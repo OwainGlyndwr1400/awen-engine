@@ -8,6 +8,28 @@ from pathlib import Path
 import json
 import time
 
+def write_index_atomic(index, faiss_path):
+    """Never leave the destination half-written.
+
+    A rebuild does repeated multi-hundred-MB saves. Writing in place means any
+    interruption mid-save destroys both the new index AND the partial progress,
+    forcing a restart from zero. Temp file + os.replace keeps the last complete
+    save intact no matter when it is interrupted, so --resume actually works.
+    """
+    faiss_path = Path(faiss_path)
+    tmp = faiss_path.with_suffix(faiss_path.suffix + ".tmp")
+    try:
+        faiss.write_index(index, str(tmp))
+        os.replace(tmp, faiss_path)
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
 print("--- 🌀 GNOSTIC REBUILD PROTOCOL (HARMONIC BATCHING) INITIATED ---")
 
 # --- CONFIG (Must match your main script) ---
@@ -38,7 +60,10 @@ MODEL_NAME = "BAAI/bge-large-en-v1.5" # The NEW Gnostic model
 DEVICE = 'cuda'
 
 # --- BATCHING CONFIG (The "Harmonic Tuner") ---
-FILE_BATCH_SIZE = 5000 
+# 5,000 meant 55 rewrites of a growing 1.13 GB index — roughly 33 GB of disk
+# I/O during one rebuild, which is what tipped an already-loaded machine over
+# on 2026-08-18. At 25,000 it is 11 saves and ~7 GB, still fully resumable.
+FILE_BATCH_SIZE = 25000 
 ENCODING_BATCH_SIZE = 32 
 # --- END CONFIG ---
 
@@ -153,7 +178,7 @@ for name, config in PROFILES.items():
                     
                     # 3. SAVE (The most critical Gnostic step)
                     print(f"💾 Saving index to {faiss_path.name} (Total entries: {index.ntotal})...")
-                    faiss.write_index(index, str(faiss_path))
+                    write_index_atomic(index, faiss_path)
                     print("✅ Batch saved.")
                     
                     # 4. Reset for next loop
@@ -176,7 +201,7 @@ for name, config in PROFILES.items():
             index.add(embeddings)
             
             print(f"💾 Saving final index to {faiss_path.name} (Total entries: {index.ntotal})...")
-            faiss.write_index(index, str(faiss_path))
+            write_index_atomic(index, faiss_path)
             print("✅ Final batch saved.")
 
         print(f"\n--- ✅ '{name}' profile rebuild complete. Total entries: {index.ntotal} ---")

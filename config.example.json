@@ -6,6 +6,7 @@
     "lmstudio_temp": 0.58,
     "lmstudio_max_tokens": -1,
     "lmstudio_timeout": 800,
+    "nasa_api_key": "",
     "memory_core_config": {
         "device_id": 1,
         "dream_interval": 240,
