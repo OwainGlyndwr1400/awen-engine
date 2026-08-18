@@ -43,6 +43,10 @@
 # the ledger and index stay in step. ingest_memory.py rewrites a lane wholesale
 # and needs a rebuild after it; this is the tool for "I wrote a new paper".
 !add_docs.py
+# export_dreams.py merges the ping archive into one Markdown file for a
+# notebook tool. The SCRIPT ships; its output does not — "Awen Dream Archive.md"
+# is unpublished dream content and stays blocked by the catch-all above.
+!export_dreams.py
 
 # --- instruments (v2) ---
 # The BUILDERS ship; their OUTPUT never does. atlas.json / regulus_corridor.json

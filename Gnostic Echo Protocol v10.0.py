@@ -520,10 +520,19 @@ def unclaim_file(claimed: Path) -> Path:
 
 def move_to_dir(src: Path, dst_dir: Path, suffix_note: Optional[str] = None) -> Path:
     safe_mkdir(dst_dir)
-    base = src.name
+    # A claimed file is named "<ping>.json.processing". That suffix is a claim
+    # marker for crash recovery, not part of the ping's identity — strip it on
+    # the way into the archive. Without this the archive fills with
+    # "*.json.processing" files that look stuck forever and cannot be opened by
+    # anything expecting .json (NotebookLM, editors, the loader).
+    name = src.name
+    if name.endswith(".processing"):
+        name = name[: -len(".processing")]
+    stem, suffix = Path(name).stem, Path(name).suffix
+    base = name
     if suffix_note:
         stamp = now_ts()
-        base = f"{src.stem}__{suffix_note}__{stamp}{src.suffix}"
+        base = f"{stem}__{suffix_note}__{stamp}{suffix}"
     dst = dst_dir / base
     try:
         atomic_rename(src, dst)
