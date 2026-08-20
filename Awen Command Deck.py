@@ -148,6 +148,61 @@ def api_graph():
     return send_file(NEURAL_MAP, mimetype="application/json")
 
 
+# --- the dream explorer ----------------------------------------------------
+DREAMS_HTML = ROOT / "awen_dreams.html"
+_DREAMS_CACHE = {"ts": 0.0, "data": None}
+
+
+@app.route("/dreams")
+def dreams_page():
+    return send_file(DREAMS_HTML)
+
+
+@app.route("/api/dreams")
+def api_dreams():
+    """The FULL dream archive, not the feed's newest 20 — every ping in the
+    relay and the processed archive, with complete synthesis, seed and
+    fragments, so a dream can actually be read rather than glimpsed before
+    the next poll wipes it. Cached 60s; the archive only grows."""
+    if _DREAMS_CACHE["data"] and time.time() - _DREAMS_CACHE["ts"] < 60:
+        return jsonify(_DREAMS_CACHE["data"])
+    out = []
+    for d, delivered in ((RELAY, False), (RELAY / "processed_pings", True)):
+        if not d.exists():
+            continue
+        for f in d.glob("ping_*.json"):
+            j = read_json(f)
+            if not isinstance(j, dict):
+                continue
+            try:
+                score = int(str(j.get("urgency", "0/0")).split("/")[0])
+            except (ValueError, IndexError):
+                score = 0
+            try:
+                ts_ = int(f.stem.split("_")[-1])
+            except ValueError:
+                ts_ = int(f.stat().st_mtime)
+            src = str(j.get("source", ""))
+            out.append({
+                "id": str(j.get("subject", "")).replace("DreamID:", "").strip() or f.stem,
+                "agent": str(j.get("agent_name", "")),
+                "urgency": score,
+                "lane": "knowledge" if src in ("private", "knowledge") else (src or "?"),
+                "mode": str(j.get("dream_mode") or "classic"),
+                "ts": ts_,
+                "delivered": delivered,
+                "seed": str(j.get("seed_text", ""))[:1500],
+                "fragments": [str(x)[:1500] for x in (j.get("body_fragments") or [])],
+                "synthesis": str(j.get("synthesis", "")),
+                "synthesis_error": j.get("synthesis_error"),
+                "backfilled": j.get("synthesis_backfilled"),
+            })
+    out.sort(key=lambda x: -x["ts"])
+    payload = {"count": len(out), "dreams": out}
+    _DREAMS_CACHE["data"], _DREAMS_CACHE["ts"] = payload, time.time()
+    return jsonify(payload)
+
+
 PAPERS_HTML = ROOT / "awen_papers.html"
 PAPERS = ROOT / "docs" / "papers.json"
 
@@ -410,6 +465,7 @@ def api_state():
                 "source": d.get("source", ""),
                 "mode": d.get("dream_mode", ""),
                 "synthesis": (d.get("synthesis") or "")[:900],
+                "synthesis_error": d.get("synthesis_error"),
                 "seed": (d.get("seed_text") or "")[:300],
                 "fragments": len(d.get("body_fragments") or []),
             })

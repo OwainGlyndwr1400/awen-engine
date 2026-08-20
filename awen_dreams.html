@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWEN GRID — DREAM EXPLORER</title>
+<style>
+:root{--bg:#03070d;--panel:rgba(8,22,36,.72);--edge:rgba(57,230,255,.18);
+      --cyan:#39e6ff;--soft:#7ff0ff;--dim:#5d8fa3;--holo:#2ef5c8;--gold:#f5b95e;
+      --red:#ff5b6e;--text:#bfe3ef;--mono:'Consolas','Cascadia Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;
+     min-height:100vh;padding-bottom:60px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.10) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply}
+
+#top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 16px;background:rgba(4,12,20,.95);border-bottom:1px solid var(--edge);
+  backdrop-filter:blur(8px)}
+.title{font-size:13px;letter-spacing:.4em;color:var(--soft);text-shadow:0 0 12px rgba(57,230,255,.5)}
+.title small{letter-spacing:.28em;color:var(--dim);font-weight:400}
+#q{flex:1;min-width:170px;max-width:360px;background:#0a1c2c;border:1px solid var(--edge);
+  border-radius:5px;color:var(--soft);font-family:var(--mono);font-size:12px;padding:7px 11px;outline:none}
+#q:focus{border-color:rgba(46,245,200,.6)}
+select{background:#0a1c2c;border:1px solid var(--edge);border-radius:5px;color:var(--soft);
+  font-family:var(--mono);font-size:11px;padding:6px 6px}
+.btn{background:none;border:1px solid rgba(46,245,200,.4);color:var(--holo);font-family:var(--mono);
+  font-size:10px;letter-spacing:.2em;border-radius:4px;padding:6px 12px;cursor:pointer;text-decoration:none}
+.btn:hover{background:rgba(46,245,200,.14)}
+.btn.on{background:rgba(46,245,200,.22);box-shadow:0 0 12px rgba(46,245,200,.25)}
+#count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.08em}
+
+#list{max-width:1080px;margin:16px auto 0;padding:0 16px}
+.dream{border:1px solid var(--edge);border-left:3px solid #155e73;border-radius:7px;
+  background:rgba(6,16,28,.45);padding:12px 16px;margin-bottom:9px;transition:border-color .18s}
+.dream:hover{border-color:rgba(46,245,200,.4)}
+.dream.cross{border-left-color:var(--gold)}
+.dhead{display:flex;gap:10px;align-items:baseline;font-family:var(--mono);font-size:12px;
+  cursor:pointer;flex-wrap:wrap}
+.dsig{color:var(--soft)} .dagent{color:var(--gold)}
+.durg{margin-left:auto;color:var(--red);font-weight:600}
+.dmeta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px;letter-spacing:.04em}
+.dsyn{font-size:12.8px;line-height:1.62;margin-top:9px;color:var(--text);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dream.open .dsyn{display:block;-webkit-line-clamp:unset;overflow:visible}
+.derr{margin-top:8px;font-size:11.5px;color:var(--red)}
+.dback{margin-top:6px;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+.dfull{display:none;margin-top:11px;border-top:1px solid rgba(57,230,255,.12);padding-top:10px}
+.dream.open .dfull{display:block}
+.dfull h4{font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--cyan);
+  margin:10px 0 6px}
+.dseed{font-size:11.8px;line-height:1.55;color:var(--dim);border-left:2px solid rgba(57,230,255,.25);
+  padding-left:10px;white-space:pre-wrap}
+.dfrag{font-size:11.5px;line-height:1.5;color:var(--dim);background:rgba(6,16,28,.55);
+  border:1px solid rgba(57,230,255,.1);border-radius:5px;padding:8px 10px;margin-bottom:6px;
+  white-space:pre-wrap}
+#empty{text-align:center;color:var(--dim);font-family:var(--mono);font-size:12px;padding:44px}
+#foot{text-align:center;font-family:var(--mono);font-size:10px;color:#2c4a58;padding:26px;line-height:1.8}
+@media (max-width:760px){
+  .title{width:100%;font-size:11px;letter-spacing:.25em}
+  #q{max-width:none;font-size:16px}
+  #count{margin-left:0}
+}
+</style>
+</head>
+<body>
+<div id="top">
+  <div class="title">DREAM EXPLORER <small>// awen grid</small></div>
+  <input id="q" placeholder="search syntheses, seeds, sigils…">
+  <select id="fvoice"><option value="">all voices</option></select>
+  <select id="flane"><option value="">all lanes</option></select>
+  <button class="btn" id="fsort">▼ NEWEST</button>
+  <button class="btn" id="fempty" title="only dreams that lost their synthesis">⚠</button>
+  <a class="btn" href="/">← DECK</a>
+  <div id="count"></div>
+</div>
+
+<div id="list"><div id="empty">◈ waking the archive…</div></div>
+<div id="foot">every dream here is also a memory — the engine reads its own thoughts, and so can you<br>
+click a dream to open it; it stays open until you close it</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let DATA=null, sortNew=true, onlyEmpty=false;
+const openIds=new Set();
+
+function ago(ts){
+  const s=(Date.now()/1000)-ts;
+  if(s<3600) return Math.round(s/60)+'m ago';
+  if(s<86400) return (s/3600).toFixed(1)+'h ago';
+  return Math.round(s/86400)+'d ago';
+}
+function when(ts){ return new Date(ts*1000).toLocaleString('en-GB',
+  {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
+
+function render(){
+  const q=$('q').value.trim().toLowerCase();
+  const fv=$('fvoice').value, fl=$('flane').value;
+  let rows=DATA.dreams.filter(d=>{
+    if(fv&&d.agent!==fv) return false;
+    if(fl&&d.lane!==fl) return false;
+    if(onlyEmpty&&d.synthesis) return false;
+    if(!q) return true;
+    return (d.id+' '+d.agent+' '+d.synthesis+' '+d.seed+' '+d.mode).toLowerCase().includes(q);
+  });
+  rows.sort(sortNew?(a,b)=>b.ts-a.ts:(a,b)=>b.urgency-a.urgency||b.ts-a.ts);
+  $('count').textContent=`${rows.length} of ${DATA.count}`;
+  $('list').innerHTML=rows.length?rows.map(d=>{
+    const open=openIds.has(d.id)?' open':'';
+    return `<div class="dream ${String(d.mode).startsWith('cross')?'cross':''}${open}" id="d-${esc(d.id)}">
+      <div class="dhead" onclick="toggle('${esc(d.id)}')">
+        <span class="dsig">◈ ${esc(d.id)}</span><span class="dagent">${esc(d.agent)}</span>
+        <span style="color:var(--dim)">${esc(d.lane)}</span>
+        <span class="durg">${d.urgency}/12</span></div>
+      <div class="dmeta">${esc(d.mode)} · ${d.fragments.length} frags · ${when(d.ts)} · ${ago(d.ts)}${d.delivered?'':' · ⏳ queued'}</div>
+      ${d.synthesis?`<div class="dsyn">🧵 ${esc(d.synthesis)}</div>`:''}
+      ${!d.synthesis&&d.synthesis_error?`<div class="derr">⚠ no synthesis — ${esc(d.synthesis_error)}</div>`:''}
+      ${!d.synthesis&&!d.synthesis_error?`<div class="derr" style="color:var(--dim)">⚠ no synthesis recorded</div>`:''}
+      ${d.backfilled?`<div class="dback">↺ ${esc(d.backfilled)}</div>`:''}
+      <div class="dfull">
+        <h4>SEED</h4><div class="dseed">${esc(d.seed)}</div>
+        <h4>CHAINED FRAGMENTS (${d.fragments.length})</h4>
+        ${d.fragments.map(f=>`<div class="dfrag">${esc(f)}</div>`).join('')}
+      </div>
+    </div>`;}).join('')
+    :`<div id="empty">nothing matches</div>`;
+}
+function toggle(id){
+  openIds.has(id)?openIds.delete(id):openIds.add(id);
+  const el=document.getElementById('d-'+id);
+  if(el) el.classList.toggle('open');
+  location.hash=openIds.has(id)?id:'';
+}
+window.toggle=toggle;
+
+(async()=>{
+  try{
+    DATA=await (await fetch('/api/dreams')).json();
+    if(DATA.error) throw 0;
+  }catch(e){
+    $('list').innerHTML='<div id="empty">archive unreachable — is the deck running?</div>'; return;
+  }
+  const voices=[...new Set(DATA.dreams.map(d=>d.agent))].sort();
+  const lanes=[...new Set(DATA.dreams.map(d=>d.lane))].sort();
+  $('fvoice').innerHTML='<option value="">all voices</option>'+voices.map(v=>`<option>${esc(v)}</option>`).join('');
+  $('flane').innerHTML='<option value="">all lanes</option>'+lanes.map(v=>`<option>${esc(v)}</option>`).join('');
+  $('q').addEventListener('input',render);
+  $('fvoice').onchange=render; $('flane').onchange=render;
+  $('fsort').onclick=e=>{sortNew=!sortNew;e.target.textContent=sortNew?'▼ NEWEST':'▼ URGENCY';render();};
+  $('fempty').onclick=e=>{onlyEmpty=!onlyEmpty;e.target.classList.toggle('on',onlyEmpty);render();};
+  render();
+  const h=decodeURIComponent(location.hash.slice(1));
+  if(h){ openIds.add(h); render();
+    const el=document.getElementById('d-'+h); if(el) el.scrollIntoView({block:'start'}); }
+})();
+</script>
+</body>
+</html>

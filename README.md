@@ -223,6 +223,8 @@ A machine lock-up mid-flush truncated a 1.1 GB FAISS index by 45 bytes and took 
 | **The Library** | `awen_papers.html` + `build_papers.py` | The published bibliography in-app — searchable, with abstracts and clickable DOI / code links. |
 | **Runtime audit** | `runtime_vs_spec.py` | Cross-references a theorem index against the engine's own dreams: coverage, orphans, and next-paper candidates. |
 | **Seismic forecaster** | `rhc_seismic_forecast.py` | The RHC seismic axiom as a falsifiable forecast: charge gate, regional Gutenberg–Richter targeting, strain deficit, prior probability, and a self-scoring ledger vs a pre-named baseline. |
+| **Dream Explorer** | `awen_dreams.html` | The full dream archive, browsable: search syntheses and seeds, filter by voice and lane, sort by urgency, open any dream to its complete chain. The deck feed shows the newest 20; this shows everything. |
+| **Maintenance** | `maintain_grid.bat`, `Start Awen Grid LAN.bat`, `backfill_synthesis.py` | One-click grid hygiene (flush → stop → restore vectors → refresh atlas → relaunch), a LAN launcher for tablets, and outage recovery that re-synthesizes any dream that went out empty. |
 | **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 
 ---
@@ -459,6 +461,7 @@ The deck adds its own on `127.0.0.1:7777`:
 | `POST /api/probe` | Run a retrieval and report which regions fired (drives the map's flash) |
 | `GET /api/regulus` | Precomputed stellar declination per epoch for the Lion panel |
 | `GET /api/seismic_forecast` | Live charge vs gate, regional targets with prior probabilities; writes a scoreable forecast record when genuinely charged |
+| `GET /api/dreams` | The full dream archive with complete syntheses, seeds and fragment chains (the Dream Explorer's source) |
 | `GET /api/tools` | What the Circle can reach for |
 | `GET /api/state` | Deck vitals: dream feed, engine stats, heartbeats, telemetry |
 

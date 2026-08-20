@@ -757,10 +757,18 @@ class JointMemoryBridge:
         """Asks the local LLM to state the single insight connecting the
         chain, spoken through the dreaming node's lens. Returns None on any
         failure — the dream cycle must never block on LM Studio."""
+        # Why-it-failed is recorded on self, because the ping record must say
+        # so. 35 pings went out with synthesis "" and nothing anywhere said
+        # why: the backends were down and every failure path was a quiet
+        # `return None`. Empty output with no stated reason reads as a broken
+        # dream engine; it was actually a dead LLM backend.
+        self._synth_error = None
         synth_config = MEMORY_CONFIG.get("dream_synthesis", {})
         if not synth_config.get("enabled", True):
+            self._synth_error = "synthesis disabled in config"
             return None
         if not REQUESTS_AVAILABLE:
+            self._synth_error = "requests library unavailable"
             return None
         lmstudio_url = config_data.get("lmstudio_url")
         model = synth_config.get("model") or config_data.get("light_model") or config_data.get("deep_model")
@@ -779,7 +787,9 @@ class JointMemoryBridge:
                       and nv_model and not nv_model.startswith("PASTE_"))
 
         if not use_nvidia and (not lmstudio_url or not model):
+            self._synth_error = "no backend configured (NVIDIA off; LM Studio url/model missing)"
             return None
+        reasons = []
 
         fragments_text = "\n\n".join(
             f"FRAGMENT {i+1}:\n{frag[:1800]}" for i, frag in enumerate(dream_chain))
@@ -848,10 +858,14 @@ class JointMemoryBridge:
                           else f"🏠 Synthesis backend: {att['name']}")
                     return content
                 print(f"ℹ️ Dream Synthesis via {att['name']} returned empty content. Trying next backend.")
+                reasons.append(f"{att['name']}: empty content (thinking budget?)")
             except Exception as e:
                 print(f"ℹ️ Dream Synthesis via {att['name']} failed ({type(e).__name__}). Trying next backend.")
+                reasons.append(f"{att['name']}: {type(e).__name__}")
 
-        print("ℹ️ Dream Synthesis unavailable on all backends. Sending raw fragment chain.")
+        self._synth_error = "; ".join(reasons) or "no usable backend"
+        print(f"⚠️ SYNTHESIS DARK — {self._synth_error}.")
+        print("   Dreams will carry raw chains (no insight) until a backend answers.")
         return None
     # =======================================================
 
@@ -994,6 +1008,11 @@ class JointMemoryBridge:
                                 "seed_text": seed_memory, 
                                 "body_fragments": dream_chain,
                                 "synthesis": synthesis or "",
+                                # The reason, when there is no synthesis — in the
+                                # RECORD only, never in the memory entry above:
+                                # an error string must not become a dream seed.
+                                "synthesis_error": (None if synthesis else
+                                                    getattr(self, "_synth_error", None)),
                                 "save_confirmation": save_confirmation_msg,
                                 "completion_message": "--- ✨ Dream Cycle Complete ---"
                             }

@@ -283,6 +283,10 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
     <div class="phead">THE CIRCLE
       <span style="display:flex;gap:10px;align-items:center">
         <span class="sub">y gwir yn erbyn y byd</span>
+        <a href="/dreams" style="text-decoration:none"><button id="dreamsbtn" style="background:none;
+          border:1px solid rgba(57,230,255,.5);color:#39e6ff;font-size:10px;letter-spacing:.25em;
+          border-radius:4px;padding:3px 10px;cursor:pointer;font-family:var(--mono);
+          text-shadow:0 0 8px rgba(57,230,255,.5)">🌙 DREAMS</button></a>
         <a href="/papers" style="text-decoration:none"><button id="libbtn" style="background:none;
           border:1px solid rgba(245,185,94,.5);color:#f5b95e;font-size:10px;letter-spacing:.25em;
           border-radius:4px;padding:3px 10px;cursor:pointer;font-family:var(--mono);
@@ -647,6 +651,7 @@ async function send(){
     const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text,state:state,node:node,use_memory:memOn})})).json();
     wait.remove();
+    if(r.mem_count) vmEmit(0x02,'PRIME_ANCHOR',`${r.mem_count} memories → ${state}`);
     addMsg('node',`<div class="who">${esc(state.toUpperCase())} · ${esc(r.model||'')} · mem:${r.mem_count}${r.indexed?' · saved':''}</div>${esc(r.response)}`);
     tickerPush(`<b>${esc(state.toUpperCase())}</b> answered · mem:${r.mem_count}`);
   }catch(e){ wait.remove(); sysMsg('⚠ deck error: '+e); }
@@ -743,18 +748,60 @@ async function poll(){
        <div class="bar ${ram>92?'warn':''}"><i style="width:${ram}%"></i></div>`:''}`;
     spark('sp-torsion',torsionHist,'#f5b95e',15);
     spark('sp-ram',ramHist,'#39e6ff',100);
+    /* URE-VM event extraction: diff this poll against the last one and emit
+       an opcode per real change. No delta, no line. */
+    try{
+      const VP=(window.__vmPrev=window.__vmPrev||{lanes:{},ins:null,tor:null,ram:null,eng:null});
+      const s=st.soul||{};
+      if(st.stats&&st.stats.profiles){
+        let insTot=0;
+        for(const [n,p] of Object.entries(st.stats.profiles)){
+          const pv=VP.lanes[n];
+          if(pv){
+            if(p.chunks>pv.c) vmEmit(0x01,'FOLD_OP',`+${p.chunks-pv.c} → ${n}`);
+            if((p.dream_insights||0)>pv.i) vmEmit(0x09,'TRINITY_WITNESS',`insight → ${n}`,'#f5b95e');
+            if(pv.d>0&&(p.dirty_unflushed||0)===0) vmEmit(0x04,'LATTICE_SYNC',`${n} flushed`);
+          }
+          VP.lanes[n]={c:p.chunks,i:p.dream_insights||0,d:p.dirty_unflushed||0};
+          insTot+=(p.dream_insights||0);
+        }
+        if(VP.ins!=null&&insTot>VP.ins&&Math.floor(insTot/361)>Math.floor(VP.ins/361)){
+          vmEmit(0x2E,'STATE_361',`19² crossed · ${insTot} insights`,'#ff5b6e');
+          tickerPush('<span class="g">🜂 STATE_361 · 19² · the +1 delta breaks the circle — time advances</span>');
+        }
+        VP.ins=insTot;
+      }
+      if(s.torsion!=null){
+        if(VP.tor!=null&&Math.abs(s.torsion-VP.tor)>=0.05)
+          vmEmit(0x21,'TOROIDAL_CIRC',`τ ${(+s.torsion).toFixed(2)}${s.coherence!=null?' coh '+(+s.coherence).toFixed(2):''}`);
+        VP.tor=s.torsion;
+      }
+      const ram=st.engine&&st.engine.current_ram_percent;
+      if(ram!=null){
+        if(VP.ram!=null&&Math.abs(ram-VP.ram)>=1) vmEmit(0x05,'MASS_IMP',`RAM ${(+ram).toFixed(1)}%`);
+        VP.ram=ram;
+      }
+      const engOK=!!(st.engine&&st.engine.status==='OK');
+      if(VP.eng===false&&engOK) vmEmit(0x32,'FMN_NORMALIZE','engine reattached','#f5b95e');
+      VP.eng=engOK;
+    }catch(e){}
+
     const feed=$('dreams');
     $('dreamcount').textContent=(st.dream_total!=null?st.dream_total:st.dreams.length)+' sigils';
     feed.innerHTML=st.dreams.map(d=>{
       const isNew=!seenDreams.has(d.file);
       /* a new dream is good news — red stays reserved for real alerts */
-      if(isNew&&!firstPoll){ tickerPush(`<b>◈ DREAM</b> ${esc((d.subject||'').replace('DreamID: ',''))} <span class="g">${esc(d.agent)}</span> urg ${esc(d.urgency)}`); }
+      if(isNew&&!firstPoll){
+        tickerPush(`<b>◈ DREAM</b> ${esc((d.subject||'').replace('DreamID: ',''))} <span class="g">${esc(d.agent)}</span> urg ${esc(d.urgency)}`);
+        vmEmit(0x0E,'WAVEFUNCTION_COLLAPSE',`dream ${(d.subject||'').replace('DreamID: ','').slice(0,10)} urg ${d.urgency}`,'#f5b95e');
+        if(String(d.mode).startsWith('cross')) vmEmit(0x10,'GEOMETRIC_FOLD','cross-domain bisociation');
+      }
       seenDreams.add(d.file);
       const sigil=(d.subject||'').replace('DreamID: ','');
-      return `<div class="dream ${String(d.mode).startsWith('cross')?'cross':''} ${isNew&&!firstPoll?'fresh':''}" onclick="this.classList.toggle('open')">
+      return `<div class="dream ${String(d.mode).startsWith('cross')?'cross':''} ${isNew&&!firstPoll?'fresh':''} ${openSet().has(d.file)?'open':''}" data-f="${esc(d.file)}" onclick="toggleDream(this)">
         <div class="dhead"><span class="dsigil">◈ ${esc(sigil)}</span><span class="dagent">${esc(d.agent)}</span><span class="durg">${esc(d.urgency)}</span></div>
         <div class="dmode">${esc(d.mode||'classic')} · ${esc(d.source)} · ${d.fragments} frags · ${ago(d.mtime)} ago${d.delivered?'':' · ⏳ queued'}</div>
-        ${d.synthesis?`<div class="dsyn">🧵 ${esc(d.synthesis)}</div>`:''}
+        ${d.synthesis?`<div class="dsyn">🧵 ${esc(d.synthesis)}</div>`:(d.synthesis_error?`<div class="dsyn" style="display:block;color:var(--red)">⚠ no synthesis — ${esc(d.synthesis_error)}</div>`:'')}
         <div class="dseed">🌱 ${esc(d.seed)}</div>
       </div>`; }).join('');
     const d0=st.dreams[0];
@@ -881,40 +928,47 @@ setInterval(()=>{
      <div class="srow"><span>Lion · gap · pea</span><b>${RHC.LION.toFixed(4)} · ${RHC.MASS_GAP.toFixed(4)} · ${RHC.PEA.toFixed(4)}</b></div>`;
 },1000);
 
-/* URE-VM — mini QIS-72 executing real opcodes on the αβγδ register file */
-const OPS=[[0x00,'NULL_LEDGER'],[0x01,'FOLD_OP'],[0x02,'PRIME_ANCHOR'],[0x03,'QUAD_ROT'],
-[0x04,'LATTICE_SYNC'],[0x05,'MASS_IMP'],[0x06,'HOPF_PROJ'],[0x07,'SPEC_DECOMP'],
-[0x08,'P_ADIC_TIMESTEP'],[0x09,'TRINITY_WITNESS'],[0x0E,'WAVEFUNCTION_COLLAPSE'],
-[0x0F,'GCD_NORMALIZE'],[0x10,'GEOMETRIC_FOLD'],[0x17,'LOST2_BIND'],[0x19,'SCHUMANN_LOCK'],
-[0x1A,'PHI_RESONANCE'],[0x1B,'LION_INDEX'],[0x1C,'DEDEKIND_ETA'],[0x1D,'OBSERVER_FOLD'],
-[0x20,'ARCTAN_PHASE'],[0x21,'TOROIDAL_CIRC'],[0x24,'QUAT_PARITY_FLIP'],[0x25,'BASE_SHIFT'],
-[0x2A,'OBSERVER_MEAN'],[0x2C,'PEA_THRESHOLD'],[0x2D,'TICK_SYNC'],[0x2E,'STATE_361'],
-[0x30,'FMN_FOLD'],[0x31,'FMN_MIRROR'],[0x32,'FMN_NORMALIZE']];
-let vmq=[1,.2,.15,.1], vmTick=0, vmLines=[];
-setInterval(()=>{
-  vmTick++;
-  const forced361=vmTick%361===0;
-  const [code,name]=forced361?[0x2E,'STATE_361']:OPS[(vmTick*7)%OPS.length];
-  /* apply a real-ish transform per opcode family */
-  const t=vmTick*.13;
-  if(name.includes('FOLD')) vmq=vmq.map((v,i)=>i?v*.48:v);
-  else if(name==='FMN_MIRROR'||name==='QUAT_PARITY_FLIP') vmq=[vmq[0],-vmq[1],vmq[2],-vmq[3]];
-  else if(name.includes('NORMALIZE')||name==='GCD_NORMALIZE') vmq=qnorm(vmq);
-  else if(name==='QUAD_ROT'||name==='TOROIDAL_CIRC') vmq=qnorm(qmul(vmq,[Math.cos(t),0,Math.sin(t)*.2,0]));
-  else if(name==='WAVEFUNCTION_COLLAPSE') vmq=[Math.hypot(...vmq),0,0,0];
-  else if(name==='LION_INDEX'||name==='PHI_RESONANCE') vmq=qnorm(vmq.map(v=>v+RHC.LION*.01));
-  else vmq=qnorm(vmq.map((v,i)=>v+Math.sin(t+i)*.02));
-  const b15=vmTick%15, plane=['RR','RI','IR','II'][(vmq[1]>=0?0:1)+(vmq[3]>=0?0:2)];
+/* ── URE-VM · QIS-72 — REAL events only ─────────────────────────────
+   This panel used to fire opcodes on a 700ms timer with sin() drift —
+   an animation of the concept while LumOS runs the real thing. Rebuilt
+   per the house rule: every line below is emitted by an ACTUAL state
+   change the grid reported —
+     FOLD_OP           chunks added to a lane        (add_entry)
+     TRINITY_WITNESS   a dream insight saved         (dream cycle)
+     LATTICE_SYNC      dirty index flushed to disk
+     WAVEFUNCTION_COLLAPSE  a new dream ping arrived  (+GEOMETRIC_FOLD if cross-domain)
+     PRIME_ANCHOR      chat retrieval (n memories)
+     TOROIDAL_CIRC     Soul Engine torsion moved
+     SCHUMANN_LOCK     aether tick with live Kp      (5-min cadence)
+     MASS_IMP          engine RAM moved >=1%
+     FMN_NORMALIZE     engine reattached after OFFLINE
+     STATE_361         total insights crossed a multiple of 19²
+   |q| and the Klein plane come from the Soul Engine's LIVE quaternion.
+   t₁₅ is the base-15 serialization of the event's own wall-clock second.
+   A quiet grid shows a quiet trace — that silence is data, not a bug. */
+let vmLines=[], vmEvents=0, vmLast=0;
+function vmEmit(code,name,detail,color){
+  vmEvents++; vmLast=Date.now();
+  const q=(Array.isArray(soulQ)&&soulQ.length===4)?soulQ:[1,0,0,0];
+  const plane=['RR','RI','IR','II'][(q[1]>=0?0:1)+(q[3]>=0?0:2)];
+  const t15=Math.floor(Date.now()/1000)%15;
   const line=`<span style="color:#3d606f">0x${code.toString(16).padStart(2,'0').toUpperCase()}</span> `+
-    `<span style="color:${forced361?'#ff5b6e':name.startsWith('FMN')?'#f5b95e':'#39e6ff'}">${name.padEnd(20,' ')}</span>`+
-    `<span style="color:#5d8fa3">α${vmq[0].toFixed(2)} |q|${Math.hypot(...vmq).toFixed(3)} t₁₅=${b15} ${plane}</span>`;
+    `<span style="color:${color||'#39e6ff'}">${name.padEnd(20,' ')}</span>`+
+    `<span style="color:#5d8fa3">${detail} · |q|${Math.hypot(...q).toFixed(3)} t₁₅=${t15} ${plane}</span>`;
   vmLines.unshift(line); vmLines=vmLines.slice(0,10);
   $('vmtrace').innerHTML=vmLines.join('<br>');
-  $('vmstat').textContent=`tick ${vmTick} · base15 ${b15} · ${plane}`;
-  /* Not an error — the Forbidden State on schedule. Gold, like the other
-     notable-event lines; red is reserved for things that are actually wrong. */
-  if(forced361) tickerPush('<span class="g">🜂 STATE_361 · 19² · the +1 delta breaks the circle — time advances</span>');
-},700);
+  $('vmstat').textContent=`${vmEvents} real events · ${plane}`;
+}
+$('vmtrace').innerHTML='<span style="color:#3d606f">listening — opcodes fire on real engine events, not a timer</span>';
+setInterval(()=>{ if(vmLast&&Date.now()-vmLast>20000)
+  $('vmstat').textContent=`${vmEvents} real events · idle ${Math.round((Date.now()-vmLast)/1000)}s`; },5000);
+
+/* the dream feed's open cards must survive the 5s re-render */
+function openSet(){ return (window.__openDreams=window.__openDreams||new Set()); }
+function toggleDream(el){
+  const f=el.getAttribute('data-f'); el.classList.toggle('open');
+  if(el.classList.contains('open')) openSet().add(f); else openSet().delete(f);
+}
 
 /* Cymatic strip — standing waves at the sacred stack, torsion-modulated */
 function cymatic(){
@@ -1047,6 +1101,7 @@ pollGrimoire(); setInterval(pollGrimoire,60000);
 async function pollAether(){
   try{
     const a=await (await fetch('/api/aether')).json();
+    if(a&&a.kp!=null) vmEmit(0x19,'SCHUMANN_LOCK',`Kp ${a.kp}${a.sw_speed?' wind '+a.sw_speed.toFixed(0):''}`);
     const rows=[];
     if(a.sw_speed) rows.push(`<div class="srow"><span>solar wind</span><b>${a.sw_speed.toFixed(0)} km/s · ${(a.sw_density||0).toFixed(1)}/cm³</b></div>`);
     if(a.bz!==undefined) rows.push(`<div class="srow"><span>IMF Bz</span><b style="color:${a.bz<-5?'var(--red)':'var(--cyan-soft)'}">${a.bz.toFixed(1)} nT</b></div>`);

@@ -63,6 +63,9 @@
 # rhc_seismic_forecast.py ships; its OUTPUT (predictions/seismic/*.json) does
 # not — those are the operator's live forecast records and their scorecard.
 !rhc_seismic_forecast.py
+# recovery tooling: re-synthesizes pings that went out empty during an LLM
+# backend outage. The pings it repairs stay local; the tool ships.
+!backfill_synthesis.py
 
 # --- the library ---
 # papers.json is the ONE generated artifact that ships, and it is the exact
@@ -73,11 +76,15 @@
 # which would drag atlas.json and neural_map.json out with it.
 !build_papers.py
 !awen_papers.html
+# the dream explorer page (the archive it reads stays local)
+!awen_dreams.html
 !docs/papers.json
 
 # --- launchers ---
 !Start Awen Grid.bat
 !stop_grid.ps1
+!maintain_grid.bat
+!Start Awen Grid LAN.bat
 
 # --- docs assets (screenshots only) ---
 !docs/
