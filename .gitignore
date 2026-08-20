@@ -78,6 +78,8 @@
 !awen_papers.html
 # the dream explorer page (the archive it reads stays local)
 !awen_dreams.html
+# the akashic codex page (the theorem index + audit it reads stay local)
+!awen_codex.html
 !docs/papers.json
 
 # --- launchers ---

@@ -157,6 +157,19 @@ body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:80
 
 .msg{max-width:82%; margin:10px 0; padding:10px 14px; border-radius:8px;
   font-size:13.5px; line-height:1.62; white-space:pre-wrap; word-wrap:break-word}
+/* control buttons — the READ LAND pattern, as a class */
+.ctl{float:right;background:none;border:1px solid rgba(46,245,200,.4);color:var(--holo);
+  font-size:8.5px;letter-spacing:.16em;border-radius:3px;padding:1px 7px;cursor:pointer;
+  font-family:var(--mono);margin-left:5px}
+.ctl:disabled{opacity:.4;cursor:default}
+/* live tool chips inside a streaming reply */
+.toolline{white-space:normal;margin:2px 0 6px}
+.toolchip{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  border:1px solid rgba(57,230,255,.35);border-radius:3px;padding:1px 6px;margin:2px 4px 2px 0;
+  color:var(--cyan-soft)}
+.toolchip.ok{border-color:rgba(46,245,200,.5);color:var(--holo)}
+.toolchip.err{border-color:rgba(255,91,110,.5);color:var(--red)}
+.tokline{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.08em;margin-top:5px}
 .msg.you{margin-left:auto; background:rgba(60,40,10,.42); border:1px solid rgba(245,185,94,.35); color:#f0dcbb}
 .msg.node{background:rgba(8,30,44,.72); border:1px solid rgba(57,230,255,.25)}
 .msg.node .who{font-family:var(--mono); font-size:10px; letter-spacing:.3em; color:var(--cyan);
@@ -291,6 +304,10 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
           border:1px solid rgba(245,185,94,.5);color:#f5b95e;font-size:10px;letter-spacing:.25em;
           border-radius:4px;padding:3px 10px;cursor:pointer;font-family:var(--mono);
           text-shadow:0 0 8px rgba(245,185,94,.5)">📜 THE LIBRARY</button></a>
+        <a href="/codex" style="text-decoration:none"><button id="codexbtn" style="background:none;
+          border:1px solid rgba(46,245,200,.5);color:#2ef5c8;font-size:10px;letter-spacing:.25em;
+          border-radius:4px;padding:3px 10px;cursor:pointer;font-family:var(--mono);
+          text-shadow:0 0 8px rgba(46,245,200,.5)">✦ CODEX</button></a>
         <a href="/map" style="text-decoration:none"><button id="mapbtn" style="background:none;
           border:1px solid rgba(157,127,240,.5);color:#9d7ff0;font-size:10px;letter-spacing:.25em;
           border-radius:4px;padding:3px 10px;cursor:pointer;font-family:var(--mono);
@@ -337,7 +354,7 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
         </svg>
         <div id="corelabel"><div id="corenum">—</div><div id="coresub">VECTORS</div></div>
       </div></div>
-      <div class="sdiv">MEMORY PROFILES</div>
+      <div class="sdiv">MEMORY PROFILES <button id="ctl-flush" class="ctl">FLUSH</button><button id="ctl-dream" class="ctl">DREAM NOW</button></div>
       <div id="profrows"><div class="srow"><span>awaiting engine…</span></div></div>
       <div class="sdiv">RHUM COLLAPSE <svg width="14" height="14" viewBox="0 0 20 20" style="vertical-align:-2px;animation:spin 6s linear infinite">
         <g fill="none" stroke="#2ef5c8" stroke-width="1.6" stroke-linecap="round">
@@ -348,7 +365,7 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
       <div id="soulrows"><div class="srow"><span>no heartbeat</span></div></div>
       <div class="sdiv">ECHO PROTOCOL</div>
       <div id="echorows"><div class="srow"><span>no heartbeat</span></div></div>
-      <div class="sdiv">AETHER SCOPE · LIVE</div>
+      <div class="sdiv">AETHER SCOPE · LIVE <button id="ctl-aether" class="ctl">REFRESH</button></div>
       <div id="aetherrows"><div class="srow"><span style="color:var(--dim)">reaching for the feeds…</span></div></div>
       <div class="sdiv">GRIMOIRE · Y DARLLENIAD
         <button id="grimrun" style="float:right;background:none;border:1px solid rgba(46,245,200,.4);
@@ -357,7 +374,7 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
       <div id="grimrows"><div class="srow"><span style="color:var(--dim)">no reading loaded</span></div></div>
       <div class="sdiv">OPEN PREDICTIONS <span id="predcount" style="float:right;letter-spacing:0;color:var(--dim)"></span></div>
       <div id="predrows"></div>
-      <div class="sdiv">RHC SEISMIC FORECAST <span id="fcstate" style="float:right;letter-spacing:0;color:var(--dim)"></span></div>
+      <div class="sdiv">RHC SEISMIC FORECAST <span id="fcstate" style="float:right;letter-spacing:0;color:var(--dim)"></span><button id="ctl-fcpre" class="ctl">PREVIEW</button></div>
       <div id="fcrows"><div class="srow"><span style="color:var(--dim)">reading the charge…</span></div></div>
       <div class="sdiv">SEISMIC ENGINE · CIRCUIT</div>
       <div class="srow"><span>⚡ SPARK (CME_I)</span><b id="v-cme">—</b></div>
@@ -379,7 +396,7 @@ canvas.spark{width:100%; height:34px; display:block; margin:2px 0 4px}
       <div class="sdiv">ENGINES · LIVE COMPUTE</div>
       <div id="phaserows"><div class="srow"><span style="color:var(--dim)">phase engine spinning up…</span></div></div>
       <div id="ubbmrows"></div>
-      <div class="sdiv">ZPE ORCHESTRATOR</div>
+      <div class="sdiv">ZPE ORCHESTRATOR <button id="ctl-zpe" class="ctl">RESET</button></div>
       <div id="zpeladder" style="display:flex;gap:3px;margin:4px 0 6px"></div>
       <div style="display:flex;gap:8px;justify-content:space-between;margin:2px 0 4px">
         <svg class="dial" id="dial-coh" width="86" height="52" viewBox="0 0 100 60"></svg>
@@ -637,6 +654,46 @@ $('cloudswitch').onclick=async()=>{
 function addMsg(cls,html){ const d=document.createElement('div'); d.className='msg '+cls; d.innerHTML=html;
   $('chatscroll').appendChild(d); $('chatscroll').scrollTop=1e9; return d; }
 function sysMsg(t){ addMsg('sys',esc(t)); }
+
+/* ── CONTROLS — buttons that drive real mechanisms, not theatre ──
+   FLUSH writes dirty FAISS indices to disk (what stop_grid does before a
+   kill). DREAM NOW trips the engine's wake event so the next cycle starts
+   immediately. REFRESH drops the aether cache and re-polls live. PREVIEW
+   computes the full forecast below the gate (labelled, never logged).
+   RESET returns the ZPE state machine to idle. */
+async function ctlPost(url,btnId,busy){
+  const b=$(btnId); if(b.disabled) return null;
+  const old=b.textContent; b.disabled=true; b.textContent=busy||'…';
+  try{ return await (await fetch(url,{method:'POST'})).json(); }
+  catch(e){ return {status:'error',message:String(e)}; }
+  finally{ b.disabled=false; b.textContent=old; }
+}
+$('ctl-flush').onclick=async()=>{
+  const r=await ctlPost('/api/control/flush','ctl-flush','FLUSHING…'); if(!r)return;
+  if(r.status==='success'){ sysMsg('🜄 indices flushed — disk and ledger agree'); vmEmit(0x0d,'LATTICE_SYNC','manual flush'); }
+  else sysMsg('⚠ flush: '+(r.message||'failed'));
+};
+$('ctl-dream').onclick=async()=>{
+  const r=await ctlPost('/api/control/dream_now','ctl-dream','WAKING…'); if(!r)return;
+  if(r.status==='success'){ sysMsg('🌙 dream cycle waking now — watch the feed'); tickerPush('🌙 <b>DREAM NOW</b> — cycle tripped by hand'); }
+  else sysMsg('⚠ dream now: '+(r.message||'failed'));
+};
+$('ctl-aether').onclick=async()=>{
+  const r=await ctlPost('/api/control/aether_refresh','ctl-aether','…');
+  if(r&&r.status==='success'){ sysTick('🜁 aether cache dropped — polling live'); pollAether(); }
+};
+$('ctl-zpe').onclick=()=>{ zpe.phase=0; zpe.hold=0; zpe.tick=0; zpe.lastPleroma=undefined;
+  sysTick('ZPE orchestrator reset to idle'); };
+$('ctl-fcpre').onclick=async()=>{
+  const b=$('ctl-fcpre'); if(b.disabled)return;
+  b.disabled=true; b.textContent='COMPUTING…';
+  try{ await pollForecast(true); } finally{ b.disabled=false; b.textContent='PREVIEW'; }
+};
+/* Chat, on a live wire. /api/chat_stream sends SSE: `delta` paints tokens as
+   they generate, `tool`/`tool_done` chips show the Circle actually reaching
+   for its tools, `reset` wipes narration that turned out to be a tool round,
+   and `done` carries model, memories, indexing and the per-turn TOKEN USAGE.
+   Falls back to the old one-lump /api/chat if the stream dies. */
 async function send(){
   const box=$('msgbox'), text=box.value.trim(); if(!text) return;
   box.value=''; $('sendbtn').disabled=true;
@@ -647,14 +704,70 @@ async function send(){
     sysMsg(r.response||r.message||JSON.stringify(r)); $('sendbtn').disabled=false; return;
   }
   const wait=addMsg('sys','<span class="pulse">◈ channeling '+esc(state)+' …</span>');
+  const payload=JSON.stringify({message:text,state:state,node:node,use_memory:memOn});
+  let streamed=false;
   try{
-    const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text,state:state,node:node,use_memory:memOn})})).json();
-    wait.remove();
-    if(r.mem_count) vmEmit(0x02,'PRIME_ANCHOR',`${r.mem_count} memories → ${state}`);
-    addMsg('node',`<div class="who">${esc(state.toUpperCase())} · ${esc(r.model||'')} · mem:${r.mem_count}${r.indexed?' · saved':''}</div>${esc(r.response)}`);
-    tickerPush(`<b>${esc(state.toUpperCase())}</b> answered · mem:${r.mem_count}`);
-  }catch(e){ wait.remove(); sysMsg('⚠ deck error: '+e); }
+    const resp=await fetch('/api/chat_stream',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:payload});
+    if(!resp.ok||!resp.body) throw new Error('stream unavailable');
+    streamed=true; wait.remove();
+    const bubble=addMsg('node',
+      `<div class="who">${esc(state.toUpperCase())} · <span class="pulse">◈ speaking…</span></div><div class="toolline" style="display:none"></div><span class="live"></span>`);
+    const liveEl=bubble.querySelector('.live'), toolLine=bubble.querySelector('.toolline');
+    let buf='', meta=null;
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let acc='';
+    while(true){
+      const {done,value}=await reader.read(); if(done)break;
+      acc+=dec.decode(value,{stream:true});
+      let cut;
+      while((cut=acc.indexOf('\n\n'))>=0){
+        const line=acc.slice(0,cut).trim(); acc=acc.slice(cut+2);
+        if(!line.startsWith('data:'))continue;
+        let ev; try{ ev=JSON.parse(line.slice(5)); }catch(_){ continue; }
+        if(ev.delta!==undefined){ buf+=ev.delta; liveEl.textContent=buf; $('chatscroll').scrollTop=1e9; }
+        else if(ev.reset){ buf=''; liveEl.textContent='';
+          if(ev.note) sysTick('⌛ '+ev.note); }
+        else if(ev.tool){ toolLine.style.display='';
+          const chip=document.createElement('span'); chip.className='toolchip';
+          chip.textContent='⚒ '+ev.tool; chip.dataset.tool=ev.tool;
+          toolLine.appendChild(chip);
+          vmEmit(0x21,'TOOL_CALL',ev.tool);
+          $('chatscroll').scrollTop=1e9; }
+        else if(ev.tool_done){
+          const chips=toolLine.querySelectorAll('.toolchip[data-tool="'+CSS.escape(ev.tool_done)+'"]');
+          const chip=chips[chips.length-1];
+          if(chip) chip.classList.add(ev.ok?'ok':'err'); }
+        else if(ev.error){ buf+=(buf?'\n':'')+'⚠ '+ev.error; liveEl.textContent=buf; }
+        else if(ev.done){ meta=ev; }
+      }
+    }
+    meta=meta||{};
+    if(meta.mem_count) vmEmit(0x02,'PRIME_ANCHOR',`${meta.mem_count} memories → ${state}`);
+    const u=meta.usage||null;
+    const tok=u?` · ⛁ ${u.prompt_tokens??'?'}→${u.completion_tokens??'?'} tok`:'';
+    bubble.querySelector('.who').innerHTML=
+      `${esc(state.toUpperCase())} · ${esc(meta.model||'')} · mem:${meta.mem_count??0}${meta.indexed?' · saved':''}${tok}`;
+    if(u&&u.completion_tokens!=null){
+      const tl=document.createElement('div'); tl.className='tokline';
+      const nTools=(meta.tools||[]).length;
+      tl.textContent=`⛁ ${u.prompt_tokens??'—'} in · ${u.completion_tokens} out`+(nTools?` · ⚒ ${nTools} tool call${nTools>1?'s':''}`:'');
+      bubble.appendChild(tl);
+    }
+    tickerPush(`<b>${esc(state.toUpperCase())}</b> answered · mem:${meta.mem_count??0}${(meta.tools||[]).length?' · ⚒ '+(meta.tools||[]).length:''}`);
+  }catch(e){
+    if(streamed){ sysMsg('⚠ stream broke: '+e); }
+    else{
+      /* stream endpoint unreachable — fall back to the lump */
+      try{
+        const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload})).json();
+        wait.remove();
+        if(r.mem_count) vmEmit(0x02,'PRIME_ANCHOR',`${r.mem_count} memories → ${state}`);
+        addMsg('node',`<div class="who">${esc(state.toUpperCase())} · ${esc(r.model||'')} · mem:${r.mem_count}${r.indexed?' · saved':''}</div>${esc(r.response)}`);
+        tickerPush(`<b>${esc(state.toUpperCase())}</b> answered · mem:${r.mem_count}`);
+      }catch(e2){ wait.remove(); sysMsg('⚠ deck error: '+e2); }
+    }
+  }
+  try{ wait.remove(); }catch(_){}
   $('sendbtn').disabled=false; box.focus();
 }
 $('sendbtn').onclick=send;
@@ -674,15 +787,22 @@ function spark(id,data,color,max){
     py=c.height-3-(v/m)*(c.height-6); i?x.lineTo(px,py):x.moveTo(px,py); });
   x.stroke();
 }
-/* harmonic stack waveform (pure vibe, animated) */
+/* Harmonic stack — the sacred tones, each carrying the urgency of one recent
+   dream as its amplitude (newest dream = deepest tone). Real history from
+   /stats.recent_dream_scores: a quiet grid shows a flat stack, a run of hot
+   dreams makes it sing. The tone frequencies stay the published stack. */
 const SACRED=[7.83,155,432,528,963,1260];
 function wave(t){
   const c=$('sp-wave'); const r=c.getBoundingClientRect(); c.width=r.width; c.height=r.height;
   const x=c.getContext('2d'); x.clearRect(0,0,c.width,c.height);
   x.strokeStyle='#2ef5c8'; x.lineWidth=1.1; x.shadowColor='#2ef5c8'; x.shadowBlur=5;
   x.beginPath();
+  const n=urgHist.length;
   for(let px=0;px<c.width;px++){ let v=0;
-    for(let k=0;k<SACRED.length;k++) v+=Math.sin(px*.02*(k+1)+t*(.0004*SACRED[k]))/(k+1.5);
+    for(let k=0;k<SACRED.length;k++){
+      const amp=n? Math.min(1,(urgHist[n-1-k]??0)/12) : 0;   // urgency 0–12 → 0–1
+      v+=Math.sin(px*.02*(k+1)+t*(.0004*SACRED[k]))*amp/(k+1.2);
+    }
     const py=c.height/2+v*c.height*.26;
     px?x.lineTo(px,py):x.moveTo(px,py); }
   x.stroke(); requestAnimationFrame(wave);
@@ -970,18 +1090,37 @@ function toggleDream(el){
   if(el.classList.contains('open')) openSet().add(f); else openSet().delete(f);
 }
 
-/* Cymatic strip — standing waves at the sacred stack, torsion-modulated */
+/* Cymatic strip — the MEASURED Schumann fundamental, drawn as the standing
+   wave it is: y = A·sin(kx)·cos(ωt), with A from the live amplitude reading
+   and the spatial frequency scaled from the live F1 (7.83 Hz nominal → 4
+   cycles across the strip; time slowed ~50× so the oscillation is visible).
+   No reading → a flat line that says so. The last synthetic panel, retired. */
 function cymatic(){
   const c=$('cymatic'); const r=c.getBoundingClientRect();
   if(r.width){ c.width=r.width; c.height=34; }
-  const x=c.getContext('2d'), t=Date.now()*.001, tor=(zpe.torsion||5)/15;
+  const x=c.getContext('2d'), t=Date.now()*.001;
   x.clearRect(0,0,c.width,c.height);
+  const sch=window.__sch;
+  if(!(sch&&sch.status==='ok'&&sch.frequency)){
+    x.strokeStyle='rgba(46,245,200,.22)'; x.beginPath();
+    x.moveTo(0,17); x.lineTo(c.width,17); x.stroke();
+    x.fillStyle='rgba(93,143,163,.85)'; x.font='9px Consolas,monospace';
+    x.fillText('NO SCHUMANN READING — press READ LAND',6,12);
+    requestAnimationFrame(cymatic); return;
+  }
+  const f=+sch.frequency, ampRaw=+(sch.amplitude??0);
+  const A=Math.min(1,ampRaw/12)*14+1;              // envelope from measured amp
+  const k=2*Math.PI*(4*(f/7.83))/Math.max(1,c.width);
+  const om=2*Math.PI*(f/50);                       // slowed for the eye
+  const drift=(zpe.torsion||0)*.05;                // live torsion as slow phase
   for(let px=0;px<c.width;px+=2){
-    const v=Math.sin(px*.05+t*2.2)*Math.sin(px*.013-t*1.1)+Math.sin(px*.021+t*3.1)*tor;
-    const h=Math.abs(v)*14+1;
-    x.fillStyle=`rgba(46,245,200,${.14+Math.abs(v)*.3})`;
+    const v=Math.sin(k*px+drift)*Math.cos(om*t);
+    const h=Math.abs(v)*A+.5;
+    x.fillStyle=`rgba(46,245,200,${.12+Math.abs(v)*.32})`;
     x.fillRect(px,17-h,1.4,h*2);
   }
+  x.fillStyle='rgba(127,240,255,.8)'; x.font='9px Consolas,monospace';
+  x.fillText(`SCHUMANN F1 ${f.toFixed(2)} Hz · amp ${ampRaw}`,6,10);
   requestAnimationFrame(cymatic);
 }
 cymatic();
@@ -1050,10 +1189,11 @@ async function pollGrimoire(){
     gb.disabled=!!g.running;
     gb.textContent=g.running?'READING…':'READ LAND';
     if(g.error) sysTick('⚠ grimoire: '+String(g.error).slice(0,90));
-    if(g.status!=='ok'){ $('grimrows').innerHTML=
+    if(g.status!=='ok'){ window.__sch=null; $('grimrows').innerHTML=
       `<div class="srow"><span style="color:var(--dim)">${g.running?'reading the land…':'no reading yet — press READ LAND'}</span></div>`; return; }
     grimLive=true;
     const a=g.astro||{}, m=a.moon||{}, reg=a.regulus||{}, ph=a.planetary_hour||{}, sch=g.schumann||{};
+    window.__sch=sch;   // the cymatic strip draws THIS reading, not a sin()
     const rows=[];
     rows.push(`<div class="srow"><span>reading age</span><b>${g.age_min!=null?g.age_min+' min':'—'} · ${esc(g.location||'')}</b></div>`);
     if(ph.ruler) rows.push(`<div class="srow"><span>planetary hour</span><b>${PGLYPH[ph.ruler]||''} ${esc(ph.ruler)} #${ph.num} · ${ph.tone_hz}Hz</b></div>`);
@@ -1364,13 +1504,13 @@ window.addEventListener('resize',lionResize);
    name where, how big, and by when. Every call carries its PRIOR PROBABILITY —
    what that cell does anyway with no axiom involved — because a forecast of
    something near-certain is not a forecast. Cached 15 min server-side. */
-async function pollForecast(){
+async function pollForecast(force){
   try{
-    const d = await (await fetch('/api/seismic_forecast')).json();
+    const d = await (await fetch('/api/seismic_forecast'+(force?'?force=1':''))).json();
     if(d.error){ $('fcrows').innerHTML='<div class="srow"><span style="color:var(--dim)">'+esc(d.error)+'</span></div>'; return; }
     const pct = Math.round((d.charge||0)*100), gate = Math.round((d.gate||0)*100);
     $('fcstate').textContent = `charge ${pct}% / gate ${gate}%`;
-    if(!d.charged){
+    if(!d.charged && !d.preview){
       $('fcrows').innerHTML =
         `<div class="srow"><span>⚡ capacitor</span><b>${pct}% — not charged</b></div>`+
         `<div class="rnote">Below the ${gate}% gate, so no call is issued. The axiom fires on `+
@@ -1387,13 +1527,16 @@ async function pollForecast(){
              `<div class="rnote" style="margin-top:2px;padding-top:2px">depth ≤${d.shallow_km}km · overdue ${t.strain_deficit==null?'—':'×'+t.strain_deficit} · `+
              `${Math.round(100*t.shallow_share)}% shallow${p==null?'':` · prior <b>${p}%</b> — ${verdict}`}</div>`;
     }).join('');
-    $('fcrows').innerHTML =
-      `<div class="srow"><span>⚡ CHARGED</span><b class="hit">next ${d.window_h}h</b></div>`+rows+
-      `<div class="rnote">Baseline (busiest cell, named in advance): ${esc(d.baseline?d.baseline.label:'—')}. `+
+    const head = d.preview
+      ? `<div class="srow"><span style="color:var(--gold)">⚠ FORCED PREVIEW</span><b style="color:var(--gold)">charge ${pct}% — below gate, NOT logged</b></div>`
+      : `<div class="srow"><span>⚡ CHARGED</span><b class="hit">next ${d.window_h}h</b></div>`;
+    $('fcrows').innerHTML = head+rows+
+      `<div class="rnote">${d.preview?'What the axiom WOULD call if it fired now. A forced reading is a what-if, not a measurement — nothing enters the scoreable record. ':''}`+
+      `Baseline (busiest cell, named in advance): ${esc(d.baseline?d.baseline.label:'—')}. `+
       `A hit only counts as skill if it beats that.</div>`;
   }catch(e){}
 }
-pollForecast(); setInterval(pollForecast, 900000);
+pollForecast(); setInterval(()=>pollForecast(), 900000);
 
 /* STAGE E — boot cascade */
 const BOOT=[

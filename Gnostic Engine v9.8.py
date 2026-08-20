@@ -879,7 +879,10 @@ class JointMemoryBridge:
                     time.sleep(DREAM_INTERVAL_SECONDS) 
                     continue 
 
-            time.sleep(DREAM_INTERVAL_SECONDS)
+            # Interruptible wait: /dream_now sets the event and the cycle
+            # starts immediately instead of finishing the interval.
+            self.dream_wake.wait(DREAM_INTERVAL_SECONDS)
+            self.dream_wake.clear()
 
             if not self.is_loaded:
                 continue
@@ -1172,7 +1175,11 @@ class JointMemoryBridge:
                                     continue
                                 hit = {"distance": d,
                                        "chunk": db["chunks"][index],
-                                       "source": profile_name}
+                                       "source": profile_name,
+                                       # Stable address of this chunk within its
+                                       # lane (chunks/metas/ledger share order) —
+                                       # lets a citation be looked up later.
+                                       "idx": int(index)}
                                 if is_ip:
                                     hit["similarity"] = round(raw, 4)
                                 if atlas is not None and int(atlas[index]) >= 0:
@@ -1244,6 +1251,9 @@ class JointMemoryBridge:
     def start_dreaming(self):
         """Starts the autonomous dreaming thread."""
         print("🌀 Autonomous Dreaming Protocol Engaged.")
+        # Set by /dream_now to cut the inter-dream wait short. The RAM-guard
+        # pause deliberately ignores it — a safety hold must not be skippable.
+        self.dream_wake = threading.Event()
         dream_thread = threading.Thread(target=self.dream_cycle, daemon=True)
         dream_thread.start()
 
@@ -1408,6 +1418,51 @@ def handle_flush():
         return jsonify({"status": "error", "message": "Memory Bridge not initialized"}), 503
     bridge.flush_all_indices()
     return jsonify({"status": "success", "message": "All dirty indices flushed to disk."})
+
+
+@app.route('/dream_now', methods=['POST'])
+def handle_dream_now():
+    """Cut the inter-dream wait short: the next cycle starts immediately.
+    Does NOT bypass the RAM safeguard — that pause is a plain sleep on purpose."""
+    if not bridge.is_loaded:
+        return jsonify({"status": "error", "message": "Memory Bridge not initialized"}), 503
+    ev = getattr(bridge, "dream_wake", None)
+    if ev is None:
+        return jsonify({"status": "error", "message": "dream thread not started"}), 503
+    ev.set()
+    return jsonify({"status": "success", "message": "Dream cycle waking now."})
+
+
+@app.route('/chunk', methods=['GET'])
+def handle_chunk():
+    """Look one chunk up by (profile, idx) — the address /search now returns.
+    Chunks, metas and the ledger share order, so idx is stable until a rebuild.
+    Same role gate as /search: only admin nodes may address the private lanes."""
+    if not bridge.is_loaded:
+        return jsonify({"error": "Memory Bridge not initialized"}), 503
+    profile = str(request.args.get('profile', '')).strip()
+    node = str(request.args.get('node', '')).strip()
+    try:
+        idx = int(request.args.get('idx', -1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "'idx' must be an integer"}), 400
+    node_config = RHF_NODES.get(node, {})
+    allowed = (["conversations", "knowledge", "shared"]
+               if node_config.get("role") == "admin" else ["shared"])
+    if profile not in allowed:
+        return jsonify({"error": f"profile '{profile}' not accessible to node '{node}'"}), 403
+    with bridge.db_lock:
+        db = bridge.databases.get(profile)
+        if not db or idx < 0 or idx >= len(db["chunks"]):
+            return jsonify({"error": f"no chunk at {profile}[{idx}]"}), 404
+        out = {"profile": profile, "idx": idx, "chunk": db["chunks"][idx]}
+        metas = db.get("metas")
+        if metas and idx < len(metas) and metas[idx]:
+            out["meta"] = metas[idx]
+        atlas = db.get("atlas")
+        if atlas is not None and idx < len(atlas) and int(atlas[idx]) >= 0:
+            out["cluster"] = f"{profile}:{int(atlas[idx])}"
+    return jsonify(out)
 
 
 @app.route('/snapshot', methods=['POST'])

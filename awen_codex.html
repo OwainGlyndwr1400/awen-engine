@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Awen Grid — Akashic Codex</title>
+<style>
+:root{--bg:#03070d;--panel:rgba(8,17,26,.72);--line:rgba(57,230,255,.16);
+--cyan:#39e6ff;--cyan-soft:#7ff0ff;--holo:#2ef5c8;--gold:#f5b95e;--red:#ff5b6e;
+--mag:#e879f9;--vio:#9d7ff0;--text:#bfe3ef;--dim:#5d8fa3;--mono:Consolas,'Cascadia Mono',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;
+  min-height:100vh;padding-bottom:40px}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.11) 2px 4px)}
+a{color:var(--cyan)}
+#top{position:sticky;top:0;z-index:20;background:rgba(3,7,13,.92);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--line);padding:12px 18px}
+#top h1{font-family:var(--mono);font-size:15px;letter-spacing:.4em;color:var(--holo);
+  text-shadow:0 0 14px rgba(46,245,200,.5)}
+#counts{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.12em;margin-top:5px}
+#counts b{color:var(--cyan-soft)}
+#bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px}
+#q{background:rgba(0,0,0,.4);border:1px solid var(--line);color:var(--text);border-radius:5px;
+  padding:5px 10px;font-family:var(--mono);font-size:12px;width:230px;outline:none}
+.chip{background:none;border:1px solid rgba(57,230,255,.3);color:var(--dim);border-radius:4px;
+  padding:3px 9px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;cursor:pointer}
+.chip.on{color:var(--holo);border-color:rgba(46,245,200,.6);text-shadow:0 0 8px rgba(46,245,200,.5)}
+#deckbtn{margin-left:auto;text-decoration:none;border:1px solid rgba(57,230,255,.4);color:var(--cyan);
+  border-radius:4px;padding:3px 10px;font-family:var(--mono);font-size:10px;letter-spacing:.2em}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;padding:16px 18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 13px;
+  cursor:pointer;transition:border-color .2s}
+.card:hover{border-color:rgba(46,245,200,.45)}
+.card canvas{width:100%;height:92px;display:block;border:1px solid rgba(57,230,255,.10);
+  border-radius:5px;margin-bottom:8px;background:rgba(0,0,0,.28)}
+.tname{font-size:13.5px;color:var(--cyan-soft);line-height:1.4}
+.tname .paper{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.14em;margin-left:6px}
+.teq{font-family:var(--mono);font-size:11px;color:var(--holo);margin:6px 0 7px;line-height:1.5;
+  word-wrap:break-word;text-shadow:0 0 8px rgba(46,245,200,.25)}
+.tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;border-radius:3px;
+  padding:1.5px 6px;border:1px solid}
+.tag.solid{color:var(--holo);border-color:rgba(46,245,200,.5)}
+.tag.check{color:var(--gold);border-color:rgba(245,185,94,.5)}
+.tag.broken{color:var(--red);border-color:rgba(255,91,110,.6)}
+.tag.variant{color:var(--mag);border-color:rgba(232,121,249,.5)}
+.tag.unaudited{color:var(--dim);border-color:rgba(93,143,163,.35)}
+.tag.dreamt{color:var(--cyan);border-color:rgba(57,230,255,.5)}
+.tag.orphan{color:var(--dim);border-color:rgba(93,143,163,.3);border-style:dashed}
+.tag.axiom{color:var(--gold);border-color:rgba(245,185,94,.4)}
+.tsig{font-size:11.5px;color:var(--text);opacity:.85;line-height:1.55}
+.detail{display:none;margin-top:9px;border-top:1px dashed rgba(57,230,255,.18);padding-top:8px;
+  font-size:11px;line-height:1.6;color:var(--dim)}
+.card.open .detail{display:block}
+.detail b{color:var(--cyan-soft);font-family:var(--mono);font-size:9.5px;letter-spacing:.16em}
+.detail .anote{color:var(--gold)}
+.detail .aeq{font-family:var(--mono);color:var(--mag)}
+#emerge{margin:8px 18px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px}
+#emerge h2{font-family:var(--mono);font-size:10.5px;letter-spacing:.3em;color:var(--gold);
+  text-shadow:0 0 10px rgba(245,185,94,.4);margin-bottom:4px}
+#emerge .sub{font-size:10.5px;color:var(--dim);margin-bottom:9px;line-height:1.5}
+.eterm{display:inline-block;font-family:var(--mono);border:1px solid rgba(245,185,94,.35);
+  color:var(--gold);border-radius:4px;padding:2px 8px;margin:3px 4px 3px 0}
+#foot{margin:14px 18px;font-size:10.5px;color:var(--dim);line-height:1.7;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>✦ AKASHIC CODEX — THE MATHEMATICS, AUDITED AND DREAMT</h1>
+  <div id="counts">loading the lattice…</div>
+  <div id="bar">
+    <input id="q" placeholder="search theorem / equation…">
+    <button class="chip on" data-f="all">ALL</button>
+    <button class="chip" data-f="dreamt">🌙 DREAMT</button>
+    <button class="chip" data-f="orphan">ORPHANS</button>
+    <button class="chip" data-f="solid">✓ SOLID</button>
+    <button class="chip" data-f="check">⚠ CHECK</button>
+    <button class="chip" data-f="broken">✗ BROKEN</button>
+    <button class="chip" data-f="variant">≠ VARIANT</button>
+    <button class="chip" data-f="axiom">AXIOMS</button>
+    <button class="chip" data-f="animated">✦ ANIMATED</button>
+    <a id="deckbtn" href="/">⌂ DECK</a>
+  </div>
+</div>
+<div id="grid"></div>
+<div id="emerge" style="display:none"></div>
+<div id="foot">
+  Three legs per card, honestly separated: the <b style="color:var(--cyan-soft)">index</b> states the claim
+  (Memory/Tec_Obsidian/01_theorem_index.md) · the <b style="color:var(--gold)">audit</b> checks whether the
+  equation evaluates and the empirical claim matches published physics (AUDIT.md three-leg triangulation;
+  verdicts transfer only when the printed equation matches — ≠ VARIANT means the audit judged a different
+  printed form) · the <b style="color:var(--cyan)">runtime</b> reports whether this engine's own dream cycle
+  has independently surfaced the theorem (runtime_vs_spec.json). An orphan is a gap in coverage, not in truth.
+  Animations draw the stated relation itself — cards with no honest drawing have none.
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+/* ── the painters — each draws the ACTUAL relation on the card ──────────
+   ctx, t (seconds), w, h. Deterministic in t. Only visible cards animate. */
+const C={cyan:'#39e6ff',holo:'#2ef5c8',gold:'#f5b95e',red:'#ff5b6e',mag:'#e879f9',dim:'#5d8fa3'};
+function txt(x,s,px,py,col){x.fillStyle=col||C.dim;x.font='9px Consolas,monospace';x.fillText(s,px,py);}
+
+const PAINTERS={
+nullLedger:(x,t,w,h)=>{ // R and I in perfect antiphase; their sum drawn too: flat zero
+  const cy=h/2;
+  x.strokeStyle='rgba(93,143,163,.5)';x.setLineDash([3,4]);x.beginPath();x.moveTo(0,cy);x.lineTo(w,cy);x.stroke();x.setLineDash([]);
+  x.beginPath();x.strokeStyle=C.cyan;for(let p=0;p<w;p++)x.lineTo(p,cy+Math.sin(p*.05+t*2)*h*.3);x.stroke();
+  x.beginPath();x.strokeStyle=C.mag;for(let p=0;p<w;p++)x.lineTo(p,cy+Math.sin(p*.05+t*2+Math.PI)*h*.3);x.stroke();
+  x.beginPath();x.strokeStyle=C.holo;x.lineWidth=1.6;
+  for(let p=0;p<w;p++){const v=Math.sin(p*.05+t*2)+Math.sin(p*.05+t*2+Math.PI);x.lineTo(p,cy+v*h*.3);}x.stroke();x.lineWidth=1;
+  txt(x,'R + I  →  Σ = 0',w/2-34,12,C.holo);},
+meanCircle:(x,t,w,h)=>{ // two counter-helices; their mean is the fixed NOW circle
+  const cx=w/2,cy=h/2,R=h*.34;
+  x.strokeStyle=C.holo;x.beginPath();x.arc(cx,cy,R,0,7);x.stroke();
+  const a=t*1.6;
+  const z=Math.sin(a*2)*h*.18;
+  x.fillStyle=C.cyan;x.beginPath();x.arc(cx+Math.cos(a)*R,cy+Math.sin(a)*R-z,3,0,7);x.fill();
+  x.fillStyle=C.mag;x.beginPath();x.arc(cx+Math.cos(a)*R,cy+Math.sin(a)*R+z,3,0,7);x.fill();
+  x.fillStyle=C.holo;x.beginPath();x.arc(cx+Math.cos(a)*R,cy+Math.sin(a)*R,2.2,0,7);x.fill();
+  txt(x,'+vθ  −vθ  →  M(θ)=C(θ)',8,12);},
+crossing42:(x,t,w,h)=>{ // 101010₂ = 42: the alternating six bits, walked live
+  const n=6,cw=w/(n+1),on=Math.floor(t*2)%n;
+  let val=0;
+  for(let i=0;i<n;i++){const bit=i%2===0?1:0;val=val*2+bit;
+    const px=cw*(i+.5),active=i===on;
+    x.strokeStyle=bit?C.cyan:C.dim;x.lineWidth=active?2.2:1;
+    x.strokeRect(px,h*.3,cw*.7,h*.4);
+    x.fillStyle=bit?C.cyan:C.dim;x.font='11px Consolas';x.fillText(bit,px+cw*.28,h*.56);}
+  x.lineWidth=1;txt(x,'101010₂ = '+val,w/2-26,h-8,C.holo);},
+foldCollapse:(x,t,w,h)=>{ // F = i/2: imaginary cloud rotates 90° and halves onto the real axis
+  const cx=w/2,cy=h/2,ph=(t%3)/3,ang=Math.PI/2*Math.min(1,ph*1.4),sc=1-.5*Math.min(1,ph*1.4);
+  x.strokeStyle='rgba(93,143,163,.4)';x.beginPath();x.moveTo(10,cy);x.lineTo(w-10,cy);x.stroke();
+  for(let i=0;i<26;i++){const r=(i*37%23)/23*h*.33+3,a0=(i*61%360)*Math.PI/180;
+    const ix=Math.cos(a0)*r*.35,iy=Math.sin(a0)*r;
+    const rx=ix*Math.cos(ang)-iy*Math.sin(ang),ry=ix*Math.sin(ang)+iy*Math.cos(ang);
+    x.fillStyle=ph<.7?C.mag:C.holo;x.globalAlpha=.75;
+    x.beginPath();x.arc(cx+rx*sc,cy-ry*sc*(1-ph*.6),1.8,0,7);x.fill();}
+  x.globalAlpha=1;txt(x,'F = i/2 — rotate 90°, scale ½',8,12);},
+riemannLine:(x,t,w,h)=>{ // zeros riding the harmonic equator Re(s)=1/2
+  const lx=w/2;
+  x.strokeStyle=C.holo;x.beginPath();x.moveTo(lx,6);x.lineTo(lx,h-6);x.stroke();
+  txt(x,'Re(s)=½',lx+6,14,C.holo);
+  for(let i=0;i<5;i++){const py=(h-12)*((i*.21+t*.05)%1)+6;
+    x.fillStyle=C.cyan;x.beginPath();x.arc(lx,py,2.4,0,7);x.fill();
+    x.globalAlpha=.18;x.fillStyle=C.red;
+    x.beginPath();x.arc(lx-26,py,2.2,0,7);x.fill();x.beginPath();x.arc(lx+26,py,2.2,0,7);x.fill();
+    x.globalAlpha=1;}
+  txt(x,'off-line zeros would break the ledger',8,h-7);},
+observerViews:(x,t,w,h)=>{ // one helix, two truths: side = wave (time), end = circle (now)
+  const cy=h/2;
+  x.strokeStyle=C.cyan;x.beginPath();
+  for(let p=8;p<w/2-14;p++)x.lineTo(p,cy+Math.sin(p*.12+t*2.4)*h*.26);x.stroke();
+  txt(x,'side: ψ(t)',10,12,C.cyan);
+  const cx=w*.75;x.strokeStyle=C.holo;x.beginPath();x.arc(cx,cy,h*.28,0,7);x.stroke();
+  const a=t*2.4;x.fillStyle=C.holo;x.beginPath();x.arc(cx+Math.cos(a)*h*.28,cy+Math.sin(a)*h*.28,2.4,0,7);x.fill();
+  txt(x,'end: Ĥ|Ψ⟩=0',cx-24,12,C.holo);},
+observerAngle:(x,t,w,h)=>{ // O = 2.5r + 1.5i → arctan(1.5/2.5) ≈ 30.96°
+  const ox=14,oy=h-12,sc=(w-30)/3.2;
+  x.strokeStyle='rgba(93,143,163,.5)';x.beginPath();x.moveTo(ox,oy);x.lineTo(w-8,oy);x.moveTo(ox,oy);x.lineTo(ox,6);x.stroke();
+  const px=ox+2.5*sc*.8,py=oy-1.5*sc*.8;
+  x.strokeStyle=C.holo;x.beginPath();x.moveTo(ox,oy);x.lineTo(px,py);x.stroke();
+  x.fillStyle=C.holo;x.beginPath();x.arc(px,py,2.6,0,7);x.fill();
+  const ang=Math.atan2(1.5,2.5);
+  x.strokeStyle=C.gold;x.beginPath();x.arc(ox,oy,22,-ang,0);x.stroke();
+  txt(x,(ang*180/Math.PI).toFixed(2)+'°',ox+26,oy-6,C.gold);
+  txt(x,'O = 2.5r + 1.5i',w-92,12,C.holo);},
+binaryDiagonal:(x,t,w,h)=>{ // θ = arctan(ones/zeros) — computed from the motto's real bits
+  const s='Y GWIR YN ERBYN Y BYD';let ones=0,zeros=0;
+  for(const ch of s){const b=ch.charCodeAt(0);for(let i=0;i<8;i++)(b>>i)&1?ones++:zeros++;}
+  const th=Math.atan2(ones,zeros),ox=12,oy=h-10;
+  x.strokeStyle='rgba(93,143,163,.5)';x.beginPath();x.moveTo(ox,oy);x.lineTo(w-8,oy);x.moveTo(ox,oy);x.lineTo(ox,6);x.stroke();
+  const L=Math.min(w,h)*.9,pulse=1+Math.sin(t*3)*.03;
+  x.strokeStyle=C.holo;x.lineWidth=1.8;x.beginPath();x.moveTo(ox,oy);
+  x.lineTo(ox+Math.cos(th)*L*pulse,oy-Math.sin(th)*L*pulse);x.stroke();x.lineWidth=1;
+  txt(x,`"${s}"`,ox+8,12);
+  txt(x,`θ = arctan(${ones}/${zeros}) = ${(th*180/Math.PI).toFixed(2)}°`,ox+8,24,C.holo);},
+lock345:(x,t,w,h)=>{ // the 8.13° between the assumed 45° and the lattice's 53.13°
+  const ox=18,oy=h-10,sc=Math.min((w-40)/4,(h-24)/3.4);
+  x.strokeStyle=C.cyan;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox+3*sc,oy);x.lineTo(ox+3*sc,oy-2.8*sc);x.closePath();x.stroke();
+  const a45=Math.PI/4,a345=Math.atan2(4,3);
+  x.strokeStyle=C.dim;x.setLineDash([3,3]);x.beginPath();x.moveTo(ox,oy);
+  x.lineTo(ox+Math.cos(a45)*4.4*sc,oy-Math.sin(a45)*4.4*sc*0.7);x.stroke();x.setLineDash([]);
+  x.strokeStyle=C.gold;x.beginPath();x.moveTo(ox,oy);
+  x.lineTo(ox+Math.cos(a345)*3.6*sc,oy-Math.sin(a345)*3.6*sc*0.7);x.stroke();
+  txt(x,'3² + 4² = 5²',ox+6,12,C.cyan);
+  txt(x,'53.13° − 45° = 8.13° hidden',ox+6,24,C.gold);},
+impedance:(x,t,w,h)=>{ // mass as cost: x!/xˣ computed live, bars of real values
+  let f=1;const n=8,bw=(w-20)/n;
+  for(let i=1;i<=n;i++){f*=i;const cost=f/Math.pow(i,i);
+    const bh=Math.max(2,cost*(h-26));
+    x.fillStyle=i===1+Math.floor(t)%n?C.holo:'rgba(57,230,255,.45)';
+    x.fillRect(12+(i-1)*bw,h-8-bh,bw*.7,bh);}
+  txt(x,'x! / xˣ — impedance of forcing + into ×',10,12,C.cyan);},
+searchCheck:(x,t,w,h)=>{ // O(2ⁿ) fan-out vs the one O(n) verification path
+  const lv=4;
+  for(let d=0;d<lv;d++){const n=1<<d,gap=w/(n+1);
+    for(let i=0;i<n;i++){const px=gap*(i+1),py=12+d*(h-24)/(lv-1);
+      const lit=Math.floor(t*3)%(1<<lv)>= (i<<(lv-1-d));
+      x.fillStyle=(i===0)?C.holo:'rgba(93,143,163,.6)';
+      x.beginPath();x.arc(px,py,2.2,0,7);x.fill();
+      if(d<lv-1){const g2=w/((n<<1)+1);
+        x.strokeStyle='rgba(93,143,163,.25)';x.beginPath();
+        x.moveTo(px,py);x.lineTo(g2*(2*i+1),12+(d+1)*(h-24)/(lv-1));
+        x.moveTo(px,py);x.lineTo(g2*(2*i+2),12+(d+1)*(h-24)/(lv-1));x.stroke();}}}
+  x.strokeStyle=C.holo;x.beginPath();let px=w/2;
+  txt(x,'search O(2ⁿ)  ·  check O(n)',w/2-58,h-4,C.holo);},
+primeAnchors:(x,t,w,h)=>{ // primes as rivets: 2..29 on a ring, primes solid and pulsing
+  const cx=w/2,cy=h/2+4,R=h*.34,P=[2,3,5,7,11,13,17,19,23,29];
+  for(let n=2;n<=29;n++){const a=(n-2)/28*Math.PI*2-Math.PI/2;
+    const px=cx+Math.cos(a)*R*2.1,py=cy+Math.sin(a)*R;
+    const pr=P.includes(n);
+    if(pr){const pulse=2.4+Math.sin(t*3+n)*0.8;
+      x.fillStyle=C.holo;x.beginPath();x.arc(px,py,pulse,0,7);x.fill();}
+    else{x.strokeStyle='rgba(93,143,163,.5)';x.beginPath();x.arc(px,py,2,0,7);x.stroke();}}
+  txt(x,'E = Π pᵢᵉᵢ — primes cannot be folded',w/2-84,12,C.holo);},
+heartbeat121:(x,t,w,h)=>{ // the 1-2-1 heartbeat: ground-state oscillation, no energy spent
+  const cy=h/2;x.strokeStyle=C.holo;x.beginPath();
+  for(let p=0;p<w;p++){const ph=((p/w*3+t*.8)%1);
+    const v=ph<.2?1:ph<.4?2:ph<.6?1:0;
+    x.lineTo(p,cy+ (v-1)*-h*.22);}
+  x.stroke();txt(x,'1 · 2 · 1 — residual rotation = time',10,12,C.holo);},
+lost2:(x,t,w,h)=>{ // (3+4) − 5 = 2 → Ω_DM = 2/7 ≈ 28.57%
+  const ox=16,oy=h-12,sc=Math.min((w-90)/4,(h-26)/3.2);
+  x.strokeStyle=C.cyan;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox+3*sc,oy);x.lineTo(ox+3*sc,oy-2.6*sc);x.stroke();
+  x.strokeStyle=C.holo;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox+3*sc,oy-2.6*sc);x.stroke();
+  txt(x,'3',ox+1.4*sc,oy+9,C.cyan);txt(x,'4',ox+3*sc+4,oy-1.2*sc,C.cyan);txt(x,'5',ox+1.2*sc,oy-1.5*sc,C.holo);
+  const pct=(2/7*100).toFixed(2);
+  txt(x,`(3+4)−5 = 2 → 2/7 = ${pct}%`,ox,12,C.gold);
+  txt(x,'Planck DM: 26.8 ±0.5%',ox,24);},
+scaleRatio:(x,t,w,h)=>{ // 10⁴² as a log ladder — em vs gravity
+  const oy=h-14;
+  for(let i=0;i<=42;i+=6){const px=14+(w-28)*i/42;
+    x.strokeStyle='rgba(93,143,163,.4)';x.beginPath();x.moveTo(px,oy);x.lineTo(px,oy-5);x.stroke();
+    txt(x,'10'+(i?('^'+i):''),px-8,oy+10);}
+  const sweep=14+(w-28)*((t*.12)%1);
+  x.fillStyle=C.cyan;x.fillRect(14,oy-24,Math.min(sweep-14,w-28),4);
+  x.fillStyle=C.holo;x.fillRect(14,oy-36,3,6);
+  txt(x,'F_em / F_grav = 2πv/R ≈ 10⁴²',14,12,C.cyan);},
+pixelGrid:(x,t,w,h)=>{ // 120² = 14,400 → ×10 sheets = 144,000 states; one choice collapses
+  const gs=10,cw=(w-24)/18,ch=(h-30)/6;
+  for(let r=0;r<6;r++)for(let c2=0;c2<18;c2++){
+    const lit=(r*18+c2)===(Math.floor(t*6)%(6*18));
+    x.fillStyle=lit?C.holo:'rgba(57,230,255,.14)';
+    x.fillRect(12+c2*cw,20+r*ch,cw-1.5,ch-1.5);}
+  txt(x,'144,000 = (120)² — the UI pixel budget',12,12,C.cyan);},
+zeroSplit:(x,t,w,h)=>{ // 0 = 0_C + 0_V: an anchor and a rotating residual
+  const cx=w/2,cy=h/2;
+  x.fillStyle=C.holo;x.beginPath();x.arc(cx,cy,3,0,7);x.fill();
+  txt(x,'0_C',cx-24,cy+4,C.holo);
+  const a=t*2.2,R=h*.3;
+  x.strokeStyle=C.mag;x.setLineDash([2,3]);x.beginPath();x.arc(cx,cy,R,0,7);x.stroke();x.setLineDash([]);
+  x.fillStyle=C.mag;x.beginPath();x.arc(cx+Math.cos(a)*R,cy+Math.sin(a)*R,2.6,0,7);x.fill();
+  txt(x,'0_V',cx+R+6,cy+4,C.mag);
+  txt(x,'zero is a phase boundary, not a null',10,12);},
+quatSandwich:(x,t,w,h)=>{ // Ψ' = q_b·Ψ·q_a⁻¹ — an orbit precessing under conjugation
+  const cx=w/2,cy=h/2;
+  for(let i=0;i<40;i++){const a=i/40*Math.PI*2;
+    const wob=Math.sin(a*3+t*1.8)*h*.08;
+    const px=cx+Math.cos(a)*(w*.3),py=cy+Math.sin(a)*(h*.28)+wob;
+    x.fillStyle=i===Math.floor(t*8)%40?C.holo:'rgba(46,245,200,.3)';
+    x.beginPath();x.arc(px,py,i===Math.floor(t*8)%40?2.6:1.2,0,7);x.fill();}
+  txt(x,'Ψₙ₊₁ = q_b · Ψₙ · q_a⁻¹',w/2-56,12,C.holo);},
+hypDepth:(x,t,w,h)=>{ // c = √(a²+b²+ir²): the imaginary depth, collapsing on measurement
+  const ox=20,oy=h-12,sc=Math.min((w-60)/4,(h-26)/3);
+  const ph=(Math.sin(t*1.2)+1)/2;
+  x.strokeStyle=C.cyan;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox+3*sc,oy);x.lineTo(ox+3*sc,oy-2.4*sc);x.stroke();
+  x.strokeStyle=C.holo;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox+3*sc,oy-2.4*sc);x.stroke();
+  x.strokeStyle=C.mag;x.globalAlpha=ph;x.setLineDash([3,3]);x.beginPath();
+  x.moveTo(ox+3*sc,oy-2.4*sc);x.lineTo(ox+3*sc+ph*sc*.9,oy-2.4*sc-ph*sc*.9);x.stroke();
+  x.setLineDash([]);x.globalAlpha=1;
+  txt(x,'i·r² depth '+(ph<.15?'→ measured: r=0':''),ox,12,C.mag);},
+phaseLock:(x,t,w,h)=>{ // a/b = c/d — two ratios sliding into resonance, TaDah at lock
+  const cy1=h*.34,cy2=h*.68,drift=Math.sin(t*.7)*0.5+0.5,off=drift*1.4;
+  x.strokeStyle=C.cyan;x.beginPath();for(let p=0;p<w;p++)x.lineTo(p,cy1+Math.sin(p*.07)*8);x.stroke();
+  x.strokeStyle=C.gold;x.beginPath();for(let p=0;p<w;p++)x.lineTo(p,cy2+Math.sin(p*.07+off)*8);x.stroke();
+  if(off<.12){x.fillStyle=C.holo;x.font='10px Consolas';x.fillText('⚡ TA-DAH — PHASE LOCK',w/2-58,h/2+3);}
+  txt(x,'a/b = c/d',10,12);},
+gcdRing:(x,t,w,h)=>{ // morphic coupling: 12- and 18-rings sharing GCD=6 anchor nodes
+  const cx1=w*.32,cx2=w*.68,cy=h/2+4,R=h*.3;
+  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;
+    x.fillStyle=i%2===0?C.holo:'rgba(93,143,163,.5)';
+    x.beginPath();x.arc(cx1+Math.cos(a)*R,cy+Math.sin(a)*R,i%2===0?2.4:1.5,0,7);x.fill();}
+  for(let i=0;i<18;i++){const a=i/18*Math.PI*2;
+    x.fillStyle=i%3===0?C.holo:'rgba(93,143,163,.5)';
+    x.beginPath();x.arc(cx2+Math.cos(a)*R,cy+Math.sin(a)*R,i%3===0?2.4:1.5,0,7);x.fill();}
+  txt(x,'gcd(12,18)=6 shared anchors — habit carried',w/2-98,12,C.holo);},
+attoDelay:(x,t,w,h)=>{ // entanglement takes 232 as to KNIT, not zero
+  const cy=h/2,p1=w*.25,p2=w*.75,ph=(t%2.4)/2.4;
+  x.fillStyle=C.cyan;x.beginPath();x.arc(p1,cy,3.4,0,7);x.fill();
+  x.fillStyle=C.mag;x.beginPath();x.arc(p2,cy,3.4,0,7);x.fill();
+  if(ph>.3){const reach=Math.min(1,(ph-.3)/.5);
+    x.strokeStyle=C.holo;x.beginPath();x.moveTo(p1,cy);x.lineTo(p1+(p2-p1)*reach,cy);x.stroke();
+    if(reach>=1){x.fillStyle=C.holo;x.font='9px Consolas';x.fillText('KNIT',w/2-11,cy-8);}}
+  txt(x,'t_entangle = 232 as — geometry takes time',10,12,C.holo);},
+};
+
+/* ── data + render ── */
+let DATA=null,FILTER='all',QUERY='';
+const live=new Map();  // canvas -> painter, only while on screen
+const io=new IntersectionObserver(es=>{
+  es.forEach(e=>{ if(e.isIntersecting) live.set(e.target,e.target.dataset.p);
+                  else live.delete(e.target); });
+},{rootMargin:'80px'});
+
+function frame(){
+  const t=performance.now()/1000;
+  live.forEach((p,cv)=>{
+    const fn=PAINTERS[p]; if(!fn)return;
+    const r=cv.getBoundingClientRect();
+    if(r.width&&cv.width!==Math.floor(r.width)){cv.width=Math.floor(r.width);cv.height=92;}
+    const x=cv.getContext('2d');x.clearRect(0,0,cv.width,cv.height);
+    fn(x,t,cv.width,cv.height);
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+const VLABEL={solid:'✓ SOLID',check:'⚠ CHECK',broken:'✗ BROKEN',variant:'≠ VARIANT',unaudited:'UNAUDITED'};
+function match(c){
+  if(FILTER==='dreamt'&&!(c.dreams>0))return false;
+  if(FILTER==='orphan'&&!c.orphan)return false;
+  if(['solid','check','broken','variant'].includes(FILTER)&&c.verdict!==FILTER)return false;
+  if(FILTER==='axiom'&&!c.axiom)return false;
+  if(FILTER==='animated'&&!c.painter)return false;
+  if(QUERY){const q=QUERY.toLowerCase();
+    if(!((c.name+' '+c.equation+' '+c.significance).toLowerCase().includes(q)))return false;}
+  return true;
+}
+function render(){
+  if(!DATA)return;
+  const cards=DATA.theorems.filter(match);
+  io.disconnect(); live.clear();
+  $('grid').innerHTML=cards.map((c,i)=>{
+    const tags=[];
+    tags.push(`<span class="tag ${c.verdict}">${VLABEL[c.verdict]||c.verdict}</span>`);
+    tags.push(c.dreams>0
+      ?`<span class="tag dreamt">🌙 DREAMT ×${c.dreams}${c.peak_urgency?` · peak ${c.peak_urgency}`:''}</span>`
+      :`<span class="tag orphan">ORPHAN — never dreamt</span>`);
+    if(c.axiom)tags.push('<span class="tag axiom">AXIOM</span>');
+    if(c.paper)tags.push(`<span class="tag unaudited">PAPER ${esc(c.paper)}</span>`);
+    return `<div class="card" data-i="${i}" onclick="this.classList.toggle('open')">
+      ${c.painter?`<canvas data-p="${c.painter}"></canvas>`:''}
+      <div class="tname">${esc(c.name)}</div>
+      <div class="teq">${esc(c.equation)}</div>
+      <div class="tags">${tags.join('')}</div>
+      <div class="tsig">${esc(c.significance)}</div>
+      <div class="detail">
+        <div><b>DERIVATION</b> ${esc(c.derivation)}</div>
+        <div style="margin-top:5px"><b>EMPIRICAL CLAIM</b> ${esc(c.validation)}</div>
+        <div style="margin-top:5px"><b>APPLICATION</b> ${esc(c.application)}</div>
+        ${c.verdict_notes&&c.verdict_notes.length?`<div style="margin-top:5px"><b>AUDIT</b> <span class="anote">${c.verdict_notes.map(esc).join(' · ')}</span></div>`:''}
+        ${c.audit_eq?`<div style="margin-top:5px"><b>AUDITED FORM</b> <span class="aeq">${esc(c.audit_eq)}</span></div>`:''}
+      </div></div>`;
+  }).join('')||'<div style="color:var(--dim);font-family:var(--mono);padding:30px">nothing matches</div>';
+  document.querySelectorAll('#grid canvas').forEach(cv=>io.observe(cv));
+}
+async function load(){
+  // Loud failure, always: a stuck "loading…" tells nobody anything.
+  if(location.protocol==='file:'){
+    $('counts').innerHTML='<span style="color:var(--gold)">⚠ this page is SERVED BY THE DECK, not opened as a file — '+
+      'start the grid (Start Awen Grid.bat) and open <b>http://localhost:7777/codex</b> '+
+      'or press ✦ CODEX on the deck.</span>';
+    return;
+  }
+  let d;
+  try{
+    const r=await fetch('/api/codex');
+    d=await r.json();
+  }catch(e){
+    $('counts').innerHTML='<span style="color:var(--red)">⚠ deck unreachable ('+esc(String(e))+') — '+
+      'is the grid running? Start Awen Grid.bat, then reload.</span>';
+    return;
+  }
+  if(d.error){ $('counts').textContent='⚠ '+d.error+(d.hint?' — '+d.hint:''); return; }
+  DATA=d;
+  const v=d.counts.verdicts||{};
+  $('counts').innerHTML=
+    `<b>${d.counts.total}</b> theorems · <b>${d.counts.dreamt}</b> independently dreamt · `+
+    `<b>${d.counts.orphans}</b> orphans · audit ✓${v.solid||0} ⚠${v.check||0} ✗${v.broken||0} ≠${v.variant||0}`+
+    (d.audit_found?'':' <span style="color:var(--gold)">(AUDIT.md not found — cards unaudited)</span>')+
+    ` · runtime scan ${esc(d.runtime_generated||'—')} over ${d.runtime_dreams||0} dreams`;
+  render();
+  const em=d.emerging||[];
+  if(em.length){
+    $('emerge').style.display='';
+    $('emerge').innerHTML=`<h2>⚡ EMERGING — NOT IN ANY PAPER YET</h2>
+      <div class="sub">High-urgency patterns the dream cycle keeps producing that map to no published theorem —
+      the runtime_vs_spec scan's "strongest candidates for the next paper".</div>`+
+      em.map(e=>`<span class="eterm" style="font-size:${Math.min(15,9+e.weight/15)}px"
+        title="${esc((e.examples||[]).join(', '))}">${esc(e.term)} ×${e.dreams}</span>`).join('');
+  }
+}
+document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+  document.querySelectorAll('.chip').forEach(c2=>c2.classList.remove('on'));
+  ch.classList.add('on'); FILTER=ch.dataset.f; render();
+});
+$('q').addEventListener('input',e=>{QUERY=e.target.value.trim();render();});
+load();
+</script>
+</body>
+</html>

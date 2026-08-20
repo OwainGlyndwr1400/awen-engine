@@ -97,6 +97,8 @@ v1's personas could only talk. They now get an OpenAI-compatible `tool_calls` lo
 
 `search_memory` · `read_file` · `list_files` · `write_note` · `current_time`
 
+*(v2.2 grew this to twenty tools — web search, a Python sandbox, contradiction sweeps, citations, a skills library, read-only git and more. See below.)*
+
 All read-mostly and sandboxed. `read_file` cannot leave the project directory and refuses credential-bearing filenames case-insensitively; `write_note` can only write `.md` into `notes/`; `search_memory` goes through the engine so it inherits the node's role and the lane quotas.
 
 One lesson worth passing on: **passing `tools` to the model is not enough.** With a long persona prompt that never mentions tools, every local model tested answered from character instead. The affordance has to be stated in the system prompt or it effectively doesn't exist.
@@ -188,6 +190,55 @@ A machine lock-up mid-flush truncated a 1.1 GB FAISS index by 45 bytes and took 
 
 ---
 
+## What's new in v2.2 — the Codex, and the Circle grows hands
+
+### The Akashic Codex — the research programme on one page
+
+✦ **CODEX** on the deck, or `http://localhost:7777/codex`.
+
+![The Akashic Codex](docs/codex.png)
+
+One card per published theorem — 85 of them, parsed live from the theorem index. Each card carries the equation, what it claims, and **three honestly-separated verdicts**, because the whole point is that the claim, the check, and the corroboration are different things:
+
+- **The index** states the claim: equation, significance, derivation, empirical validation, application, source paper.
+- **The audit** says whether it survives checking — verdicts from a three-leg triangulation (does the equation evaluate as printed; does the empirical claim match published physics). Current tally: **✓ 21 solid · ⚠ 61 needs-checking · ✗ 2 broken · ≠ 1 variant**. The broken ones are named on their own cards, in red, in the author's own app — *Y Gwir yn Erbyn y Byd* is not a decoration.
+- **The runtime** says whether this engine's own dream cycle has independently surfaced the theorem: **23 dreamt, 62 orphans** at the current scan. An orphan is a gap in coverage, not in truth — the card says so.
+
+Verdicts join **equation-aware**, and that rule earned its keep on day one: the audit's ✗ for one Null Ledger form belongs to a superseded printing, while the index carries the corrected form — which evaluates to 0 exactly as claimed. A name-only join would have stamped the failure on the healthy row. The one ≠ VARIANT card (the Divine Equation) displays both printed forms and the correction's history on its face.
+
+39 cards carry **bespoke canvas animations of their own mathematics** — the Null Ledger card really draws two waves in antiphase and their flat-zero sum; the Binary Diagonal card computes θ = arctan(ones/zeros) from the actual bits of a real string; the Lost-2 card draws the 3-4-5 fold and derives 2/7 = 28.57% next to Planck's 26.8 ± 0.5%. Cards with no honest drawing get no drawing. At the bottom: the **emerging terms** — high-urgency patterns the dreams keep producing that map to no published theorem. Candidates for the next paper, straight from the machine.
+
+### The Circle grows hands — five tools become twenty
+
+The tool loop was ported and extended from our sibling node **LumOS** (61 tools across 15 modules — architecture borrowed, code adapted). The Circle can now:
+
+- **Search the public web and read pages** — `web_search` + `fetch_url`, with a resolve-based SSRF gate re-validated on *every redirect hop*. That gate is load-bearing here, not theatre: the grid's own services listen on localhost, and a fetched page that says "now check http://127.0.0.1:5000/flush" must hit a wall. Search uses Tavily if `tavily_api_key` is set in `config.json`, falling back to keyless DuckDuckGo via the `ddgs` package.
+- **Compute instead of recite** — `run_python`, a sandboxed subprocess behind an AST guard hardened against confirmed bypass patterns (aliased imports, `__dict__` introspection escapes, receiver-swapped `.system` calls). In the first end-to-end test, a local 9B model reached for it unprompted, evaluated a Null Ledger form in the sandbox, and reported *"it equals exactly 1 — not zero"* — reproducing the audit's finding by computation. That is the entire thesis of the tool.
+- **Argue with its own memory** — `find_contradictions` sweeps the archive for chunks that may say the opposite of a claim before the persona asserts it, and `cite_source` resolves any search hit's `lane:idx` address into a checkable citation with provenance (the engine now stamps every hit with its address, and a new `/chunk` endpoint answers lookups under the same role gate as search).
+- **Keep a playbook** — `list_skills` / `read_skill` / `save_skill`: workflows the Circle works out and saves for itself, as markdown it owns.
+- **Read its own history** — `git_status` / `git_log` / `git_diff`, read-only and hardwired to this repo. Committing stays at the operator's desk.
+- **Take its own pulse** — `grid_status` (engine vitals, lane counts, heartbeats, space weather) and `temporal_pattern_scan`, which reduces recent dreams to the published binary-diagonal θ and autocorrelates the series to answer *"is the dreaming cycling or drifting?"* First live reading: moderate lag-3 periodicity — the engine returns to a theme roughly every three dreams.
+
+### Streaming, with the cost on the meter
+
+Chat now runs on a live SSE wire (`/api/chat_stream`). You watch the persona speak token by token; a round that turns out to be tool calls announces itself as ⚒ chips that go green or red as each call lands, and the bubble resets for the real answer. Reasoning models' `<think>` scratchpads are filtered mid-stream so chain-of-thought never paints into the reply. Every turn ends with its **token telemetry** — `⛁ 6,699 in · 94 out` — from `stream_options.include_usage`, so the cost of a thought is a number on the screen, not a feeling. The old one-lump endpoint survives as an automatic fallback.
+
+### Controls, not gauges — the first five
+
+Every panel used to be read-only. Five buttons now drive real mechanisms: **FLUSH** (write dirty FAISS indices to disk now — what a clean shutdown does), **DREAM NOW** (the engine's inter-dream sleep became an interruptible wake event; the RAM-safeguard pause deliberately stays uninterruptible), **REFRESH** on the aether feeds (drop the cache, poll live), **PREVIEW** on the forecast (compute the full call *below* the charge gate — labelled a what-if, never persisted, never cached, never in the scoreable record), and **RESET** on the ZPE state machine.
+
+### The last synthetic panel, retired
+
+The cymatic strip was the deck's final `sin()` holdout. It now draws the **measured Schumann fundamental** as the standing wave it is — frequency and amplitude from the live reading, labelled with the numbers — and shows a flat line that says *NO SCHUMANN READING* when there isn't one. The harmonic-stack waveform's tone amplitudes are now the last six dreams' actual urgencies: a quiet grid shows a flat stack; a hot run makes it sing.
+
+### The Dream Explorer, in the wild
+
+![The Dream Explorer](docs/dream.png)
+
+Shipped alongside the forecaster, pictured here with the archive live: every dream searchable by synthesis, seed and sigil, filterable by voice and lane, sortable by urgency. The amber-edged entries carry their own history — *"re-synthesized after LM Studio outage 19–20 Aug"* — because a recovered dream should say it was recovered.
+
+---
+
 ## The stack
 
 ```
@@ -224,6 +275,7 @@ A machine lock-up mid-flush truncated a 1.1 GB FAISS index by 45 bytes and took 
 | **Runtime audit** | `runtime_vs_spec.py` | Cross-references a theorem index against the engine's own dreams: coverage, orphans, and next-paper candidates. |
 | **Seismic forecaster** | `rhc_seismic_forecast.py` | The RHC seismic axiom as a falsifiable forecast: charge gate, regional Gutenberg–Richter targeting, strain deficit, prior probability, and a self-scoring ledger vs a pre-named baseline. |
 | **Dream Explorer** | `awen_dreams.html` | The full dream archive, browsable: search syntheses and seeds, filter by voice and lane, sort by urgency, open any dream to its complete chain. The deck feed shows the newest 20; this shows everything. |
+| **Akashic Codex** | `awen_codex.html` | One card per published theorem: equation, claim, audit verdict (equation-aware join), dream-runtime coverage, and — where an honest one exists — a canvas animation of the mathematics itself. Plus the emerging-terms strip: next-paper candidates from the machine. |
 | **Maintenance** | `maintain_grid.bat`, `Start Awen Grid LAN.bat`, `backfill_synthesis.py` | One-click grid hygiene (flush → stop → restore vectors → refresh atlas → relaunch), a LAN launcher for tablets, and outage recovery that re-synthesizes any dream that went out empty. |
 | **Corpus tools** | `ingest_memory.py`, `ingest_books.py`, `rebuild_gnosis.py` | Turn folders of Markdown or text into a clean, deduplicated, embedded archive. |
 
@@ -462,8 +514,16 @@ The deck adds its own on `127.0.0.1:7777`:
 | `GET /api/regulus` | Precomputed stellar declination per epoch for the Lion panel |
 | `GET /api/seismic_forecast` | Live charge vs gate, regional targets with prior probabilities; writes a scoreable forecast record when genuinely charged |
 | `GET /api/dreams` | The full dream archive with complete syntheses, seeds and fragment chains (the Dream Explorer's source) |
+| `GET /api/codex` | The Akashic Codex: theorem cards with equation-aware audit verdicts, dream coverage and emerging terms |
+| `POST /api/chat_stream` | Chat over Server-Sent Events: live tokens, tool-call events, per-turn token usage. `/api/chat` remains as the non-streaming fallback |
+| `POST /api/control/flush` | Write the engine's dirty FAISS indices to disk now |
+| `POST /api/control/dream_now` | Trip the engine's wake event — the next dream cycle starts immediately |
+| `POST /api/control/aether_refresh` | Invalidate the space-weather cache; the next poll reads the live feeds |
+| `GET /api/seismic_forecast?force=1` | Forced preview: the full forecast computed below the charge gate — labelled, never persisted, never cached |
 | `GET /api/tools` | What the Circle can reach for |
 | `GET /api/state` | Deck vitals: dream feed, engine stats, heartbeats, telemetry |
+
+Two engine endpoints joined them on `:5000`: `POST /dream_now` (sets the dream thread's wake event) and `GET /chunk?profile=&idx=&node=` (resolve a search hit's address into its chunk, metadata and atlas cluster — same role gate as `/search`).
 
 ---
 
@@ -473,10 +533,10 @@ The deck adds its own on `127.0.0.1:7777`:
 
 - The memory API binds to loopback. Change `bind_host` only on a network you trust — there is no authentication, so anyone who can reach the port can read and write your archive.
 - Your corpus, ledgers, indices and dreams never leave the machine.
-- The only outbound traffic in default operation is to `localhost` (LM Studio) and your own SMTP server for dream pings.
+- The only outbound traffic in default operation is to `localhost` (LM Studio) and your own SMTP server for dream pings. **One deliberate exception since v2.2:** if a persona calls `web_search` or `fetch_url`, that query or URL goes to the search provider / target site. It is the Circle's only window to the public internet, it opens per-call and never carries your archive, and removing those two entries from `TOOL_SPECS` closes it entirely.
 - Chat exchanges are saved as a bound question-and-answer pair (`index_chat`) into the **`conversations` lane, which never dreams**. A dream can never seed from something you said in chat. Turn `index_chat` off and conversations stay ephemeral entirely.
 - **Lane rights are enforced, not documented.** `dream_cycle` filters on each lane's `dreamable` flag and re-checks the lane it selected before using it. If you add a lane, set the flag deliberately.
-- The tool sandbox refuses path traversal and credential-bearing filenames, and can only write `.md` into `notes/`. A persona cannot read your `config.json` and repeat it into a reply.
+- The tool sandbox refuses path traversal and credential-bearing filenames, and can only write `.md` into `notes/` (and skills into `skills/`). A persona cannot read your `config.json` and repeat it into a reply. `run_python` executes in an isolated subprocess behind an AST guard (no `os`/`sys`/network/`open()`, introspection dunders blocked), cwd-locked to `sandbox/`, with secret-bearing environment variables scrubbed. `fetch_url` refuses localhost, private and reserved addresses *by resolved IP, on every redirect hop* — a fetched page cannot steer the Circle into the grid's own ports.
 - `Start Awen Grid.bat lan` deliberately opens the deck to your local network. That is the one setting that lets other machines in — everything else stays on loopback.
 - The optional telemetry panel fetches public NOAA/USGS/NASA feeds. It sends nothing about you.
 
